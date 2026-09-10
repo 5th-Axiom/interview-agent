@@ -1,0 +1,60 @@
+{
+  "name": "interview-agent",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0 --port 3100",
+    "build": "next build",
+    "start": "tsx --env-file=.env.local scripts/start.ts",
+    "relay": "tsx --env-file=.env.local server/relay.ts",
+    "worker": "tsx --env-file=.env.local server/worker.ts",
+    "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",
+    "db:seed": "tsx --env-file=.env.local scripts/seed.ts",
+    "test": "node scripts/test.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev:all": "concurrently -k -n web,relay,worker \"npm run dev\" \"npm run relay\" \"npm run worker\"",
+    "format": "prettier --write app components features foundations server shared scripts tests public *.ts *.json",
+    "test:browser": "node scripts/browser-check.mjs",
+    "test:relay": "node scripts/relay-check.mjs",
+    "test:mobile": "node scripts/mobile-check.mjs",
+    "setup": "node scripts/setup.mjs",
+    "test:edges": "node scripts/edge-check.mjs",
+    "test:providers": "DEV_TEST_MODE=false tsx --env-file=.env.local scripts/provider-check.ts",
+    "test:live": "node scripts/live-check.mjs",
+    "dev:test": "DEV_TEST_MODE=true npm run dev:all",
+    "test:ui-edges": "node scripts/ui-edge-check.mjs",
+    "test:context-live": "DEV_TEST_MODE=false tsx --env-file=.env.local scripts/context-live-check.ts",
+    "test:selection-live": "node scripts/selection-live-check.mjs",
+    "test:journey": "node scripts/journey-check.mjs",
+    "test:recovery": "node scripts/recovery-check.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1129.0",
+    "@tanstack/react-query": "5.102.8",
+    "dotenv": "17.4.2",
+    "jose": "6.2.12",
+    "lucide-react": "1.44.0",
+    "next": "16.3.4",
+    "pg": "8.23.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "ws": "8.21.3",
+    "zod": "4.6.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.2",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/ws": "8.18.1",
+    "concurrently": "10.0.5",
+    "prettier": "3.9.6",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

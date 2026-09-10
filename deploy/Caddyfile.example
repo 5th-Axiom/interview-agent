@@ -1,0 +1,9 @@
+# Set SITE_HOST to your domain. Do not enable request query logging: media URLs carry short-lived tickets.
+{$SITE_HOST} {
+  handle /ws {
+    reverse_proxy 127.0.0.1:3101
+  }
+  handle {
+    reverse_proxy 127.0.0.1:3100
+  }
+}

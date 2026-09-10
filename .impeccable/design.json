@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-10T16:10:51.964556+00:00",
+  "title": "Design System: AI 面试",
+  "extensions": {
+    "colorMeta": {
+      "action-primary": {
+        "role": "primary",
+        "displayName": "交互蓝",
+        "canonical": "#2466d8"
+      },
+      "bg-canvas": {
+        "role": "neutral",
+        "displayName": "冷灰画布",
+        "canonical": "#f5f7fa"
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow-orb",
+        "value": "0 24px 68px #3266bb26",
+        "purpose": "浅色圆球柔和外阴影"
+      },
+      {
+        "name": "shadow-orb-dark",
+        "value": "0 24px 68px #050b1740",
+        "purpose": "深色圆球柔和外阴影"
+      }
+    ],
+    "motion": [
+      {
+        "name": "motion-short",
+        "value": "180ms",
+        "purpose": "按钮背景过渡"
+      },
+      {
+        "name": "voice",
+        "value": "1.1s infinite alternate ease-in-out",
+        "purpose": "说话与聆听音柱"
+      },
+      {
+        "name": "breathe",
+        "value": "2s infinite ease-in-out",
+        "purpose": "思考呼吸"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-desktop-max",
+        "value": "1199px"
+      },
+      {
+        "name": "mobile-max",
+        "value": "767px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Button / default",
+      "kind": "button",
+      "refersTo": "button-default",
+      "description": "保存草稿",
+      "html": "<button class=\"ds-btn\">保存草稿</button>",
+      "css": ".ds-btn{min-height:44px;padding:10px 18px;border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-text-primary);font:550 16px var(--font-body);cursor:pointer;transition:background var(--motion-short)}.ds-btn:hover:not(:disabled){background:var(--color-bg-subtle)}.ds-btn:disabled{opacity:.5;cursor:not-allowed}:focus-visible{outline:3px solid var(--color-focus);outline-offset:3px}"
+    },
+    {
+      "name": "Button / primary",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "发布岗位",
+      "html": "<button class=\"ds-btn\">发布岗位</button>",
+      "css": ".ds-btn{min-height:44px;padding:10px 18px;border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-text-primary);font:550 16px var(--font-body);cursor:pointer;transition:background var(--motion-short)}.ds-btn:hover:not(:disabled){background:var(--color-bg-subtle)}.ds-btn:disabled{opacity:.5;cursor:not-allowed}.ds-btn{background:var(--color-action-primary);border-color:transparent;color:var(--color-action-text)}.ds-btn:hover:not(:disabled){background:var(--color-action-hover)}:focus-visible{outline:3px solid var(--color-focus);outline-offset:3px}"
+    },
+    {
+      "name": "Button / danger",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "结束面试",
+      "html": "<button class=\"ds-btn\">结束面试</button>",
+      "css": ".ds-btn{min-height:44px;padding:10px 18px;border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-text-primary);font:550 16px var(--font-body);cursor:pointer;transition:background var(--motion-short)}.ds-btn:hover:not(:disabled){background:var(--color-bg-subtle)}.ds-btn:disabled{opacity:.5;cursor:not-allowed}.ds-btn{background:var(--color-danger-bg);border-color:transparent;color:var(--color-danger)}:focus-visible{outline:3px solid var(--color-focus);outline-offset:3px}"
+    },
+    {
+      "name": "Button / quiet",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "显示字幕",
+      "html": "<button class=\"ds-btn\">显示字幕</button>",
+      "css": ".ds-btn{min-height:44px;padding:10px 18px;border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-text-primary);font:550 16px var(--font-body);cursor:pointer;transition:background var(--motion-short)}.ds-btn:hover:not(:disabled){background:var(--color-bg-subtle)}.ds-btn:disabled{opacity:.5;cursor:not-allowed}.ds-btn{background:transparent;border-color:transparent;color:var(--color-text-secondary)}:focus-visible{outline:3px solid var(--color-focus);outline-offset:3px}"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "中文可见标签与输入表面",
+      "html": "<label class=\"ds-field\">岗位名称<input class=\"ds-input\" placeholder=\"请输入岗位名称\"></label>",
+      "css": ".ds-field{display:flex;flex-direction:column;gap:8px;color:var(--color-text-primary);font:600 14px var(--font-body)}.ds-input{padding:11px 13px;border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-text-primary);font:400 16px var(--font-body)}:focus-visible{outline:3px solid var(--color-focus);outline-offset:3px}"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "description": "招聘工作台当前页",
+      "html": "<nav class=\"ds-nav\" aria-label=\"招聘管理\"><a href=\"#roles\">岗位管理</a><a href=\"#records\">面试记录</a></nav>",
+      "css": ".ds-nav{font:14px var(--font-body)}.ds-nav a{display:block;padding:12px 16px;margin-bottom:8px;border-radius:10px;text-decoration:none;color:var(--color-text-secondary)}.ds-nav a:first-child{background:var(--color-bg-subtle);color:var(--color-action-primary);font-weight:600}:focus-visible{outline:3px solid var(--color-focus);outline-offset:3px}"
+    },
+    {
+      "name": "Tag",
+      "kind": "chip",
+      "description": "发布状态含明确文字",
+      "html": "<span class=\"ds-tag\">已发布</span>",
+      "css": ".ds-tag{display:inline-flex;padding:3px 10px;background:var(--color-bg-subtle);color:var(--color-success);border-radius:6px;font:12px var(--font-body)}"
+    },
+    {
+      "name": "Section",
+      "kind": "card",
+      "description": "面试记录内容区",
+      "html": "<section class=\"ds-section\"><h2>对话记录</h2><p>保留面试中的交流内容。</p></section>",
+      "css": ".ds-section{padding:24px;background:var(--color-bg-surface);border:1px solid var(--color-border);border-radius:12px;font-family:var(--font-body);color:var(--color-text-primary)}.ds-section h2{font-size:19px;margin:0 0 18px}.ds-section p{font-size:14px;color:var(--color-text-secondary);margin:0}"
+    },
+    {
+      "name": "Voice orb",
+      "kind": "custom",
+      "description": "语音识别核心；圆球隐藏于辅助技术，状态文字可读",
+      "html": "<div class=\"ds-orb\" aria-hidden=\"true\"><div class=\"ds-bars\"><i></i><i></i><i></i><i></i><i></i></div></div><p class=\"ds-status\" role=\"status\">正在聆听，你可以随时打断</p>",
+      "css": ".ds-orb {\n  width: 220px;\n  height: 220px;\n  position: relative;\n  border-radius: 50%;\n  overflow: hidden;\n  background: radial-gradient(\n    ellipse at 28% 22%,\n    var(--color-orb-top) 0%,\n    var(--color-orb-middle) 48%,\n    var(--color-orb-bottom) 100%\n  );\n  box-shadow: var(--shadow-orb);\n  display: grid;\n  place-items: center;\n  transition:\n    filter 0.4s,\n    transform 0.4s;\n}\n.ds-orb:before {\n  content: \"\";\n  position: absolute;\n  width: 270px;\n  height: 120px;\n  background: var(--color-orb-top);\n  opacity: 0.35;\n  border-radius: 50%;\n  transform: rotate(-35deg) translateY(-16px);\n}\n.ds-orb:after {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  border: 1px solid var(--color-orb-top);\n  border-radius: 50%;\n  opacity: 0.75;\n}\n.ds-orb .ds-bars {\n  display: flex;\n  gap: 7px;\n  align-items: center;\n  height: 70px;\n  z-index: 1;\n}\n.ds-orb i {\n  display: block;\n  width: 7px;\n  border-radius: 5px;\n  background: var(--color-action-text);\n  height: 25px;\n}\n.ds-orb i:nth-child(2),\n.ds-orb i:nth-child(4) {\n  height: 45px;\n}\n.ds-orb i:nth-child(3) {\n  height: 64px;\n}\n.ds-orb[data-state=\"speaking\"] i,\n.ds-orb[data-state=\"listening\"] i {\n  animation: voice 1.1s infinite alternate ease-in-out;\n}\n.ds-orb i:nth-child(2) {\n  animation-delay: -0.7s;\n}\n.ds-orb i:nth-child(3) {\n  animation-delay: -0.3s;\n}\n.ds-orb[data-state=\"thinking\"] {\n  animation: breathe 2s infinite ease-in-out;\n}\n.ds-orb[data-state=\"paused\"],\n.ds-orb[data-state=\"recovery\"] {\n  filter: saturate(0.3);\n}\n@keyframes voice{to{transform:scaleY(.45)}}@keyframes breathe{50%{transform:scale(.96)}}.ds-orb{margin:auto}.ds-status{font:15px var(--font-body);color:var(--color-text-secondary);text-align:center}@media(prefers-reduced-motion:reduce){.ds-orb,.ds-orb i{animation:none!important;transition:none!important}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "蓝色语音圆球与安静的工作台",
+    "overview": "Operate 模式：沿用蓝色语音圆球与轻盈的中文工作台。候选人围绕声音状态和少量通话操作展开；招聘方围绕表单、列表、对话证据与复核展开。蓝色承担交互和语音身份，安静的中性表面承载内容。",
+    "keyCharacteristics": [
+      "蓝色圆球是语音场景的识别核心。",
+      "中文系统字体、清晰层级、相关内容成组。",
+      "浅色与深色共享语义 Token，PC 与 H5 共用业务逻辑。"
+    ],
+    "rules": [],
+    "dos": [
+      "使用语义变量和基础组件扩展页面，保持 Foundations、基础组件、业务组件、页面四层；状态 Hook 和请求 api.ts 留在 features。",
+      "为图标操作提供可访问名称；视觉隐藏桌面文案后仍保留名称。状态以文字表达，错误使用 alert，常规反馈使用 status。",
+      "保持候选人界面聚焦语音；字幕默认隐藏，不引入阶段进度。",
+      "在 PC / H5、浅色 / 深色与键盘路径检查新增界面；测试模式继续明确标识。"
+    ],
+    "donts": [
+      "不要在业务页面建立第二套颜色、字体或断点系统。",
+      "不要用圆球动画或颜色代替状态文字，也不要把演示输入当成真实语音能力。",
+      "不要把评估草稿表现为录用结论，或把体验评分表现为候选人成绩。"
+    ]
+  }
+}
