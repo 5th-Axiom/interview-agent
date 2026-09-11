@@ -4,7 +4,7 @@
 
 - SSH：`ssh cd`；项目目录 `/home/deploy/interview-agent`。
 - 域名入口：`https://test.interview.energylt.com`；候选人 `/interview?entry=demo`，招聘方 `/admin/roles`。
-- 2026-09-11 改用域名：浏览器 TLS 由现有 ESA 接入终结，回源至 `47.108.226.96:80`，Nginx 按域名转发 Web / Relay。旧 IP:9443 跳转到新域名，IP:443 的 Aural 服务保留。域名目前的 ESA 证书尚不匹配，公网 HTTPS 验收须在控制台补齐证书和回源设置后完成。
+- 2026-09-11 改用域名：浏览器 TLS 由现有 ESA 接入终结，回源至 `47.108.226.96:80`，Nginx 按域名转发 Web / Relay。旧 IP:9443 跳转到新域名，IP:443 的 Aural 服务保留。域名 HTTPS 已生效，公网 PC / H5 登录与 WebSocket 验收通过。
 - 独立 Compose 名称 `interview-agent-staging`；数据库和对象存储无宿主端口，Web / Relay 仅绑定 `127.0.0.1:13100/13101`。不要对本项目执行 `down -v`，不要删除其他项目的卷。
 - 真实供应商为 DeepSeek、DashScope、TokenDance；候选人使用显式开启的测试验证码 `123456`，没有发送真实短信。页面标识供应商联调及测试验证码。
 
@@ -115,6 +115,8 @@ sudo systemctl reload nginx
 
 ## 验证边界
 
-本次自动测试 26 项、类型检查、本地和 Linux 容器构建通过。服务器供应商检查与通过 SSH 通道的完整协议验收覆盖：匿名页面 / API / WebSocket 拒绝、错误与正确入口登录、招聘与候选人登录、真实 ASR / LLM / TTS、可靠结束、Worker 评估、私有录音生成和退出。协议验收使用合成 PCM 与模拟播放回执，不能代替外网浏览器实际播放或真人麦克风验收。
+本次自动测试 28 项、类型检查、本地和 Linux 容器构建通过。服务器供应商检查与通过 SSH 通道的完整协议验收覆盖：匿名页面 / API / WebSocket 拒绝、错误与正确入口登录、招聘与候选人登录、真实 ASR / LLM / TTS、可靠结束、Worker 评估、私有录音生成和退出。协议验收使用合成 PCM 与模拟播放回执，不能代替外网浏览器实际播放或真人麦克风验收。
 
 PC 1440px 浅色与 H5 390px 深色入口表单已通过真实 Chrome 截图检查，无横向溢出。另用 Chrome 经 SSH CONNECT 通道访问原始 IP HTTPS 地址，保留证书校验，实际从页面验证两端的匿名跳转、错误 / 正确密码、业务登录、退出与 Cookie 清除；浏览器确认安全上下文和麦克风 API 存在，无 JavaScript 异常。该检查不代表公网 9443 可达，也没有模拟真人麦克风。域名证书与回源配置完成后，仍需按上面的步骤检查公网实际麦克风和 WebSocket。
+
+2026-09-11 域名切换验收：公网 Chrome 1440px 招聘端、390px 候选人端完成匿名跳转、错误 / 正确入口密码、业务登录、退出与 Cookie 清除，均无页面异常或横向溢出。正常证书校验下，公网 HTTPS 请求及 WSS Upgrade / Ping 通过；匿名 API 和 WebSocket 返回 401，旧 IP:9443 返回 308 到新域名。该次验收验证域名接入与鉴权，没有重复调用真实语音供应商或模拟真人麦克风。结果保存于 Git 忽略的 `.local/domain-browser.json`、`.local/domain-public-check.json`。
