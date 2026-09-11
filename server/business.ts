@@ -3,8 +3,11 @@ import { randomUUID } from "node:crypto";
 import { DB, pool, transaction, requireThat } from "./db";
 import { testMode } from "./config";
 import { Actor, hash } from "./auth";
-export const defaultAssessment =
-  "根据面试原始记录整理能力观察、优势、需进一步确认的问题。每项观察引用真实 event_id。不推断敏感属性，不给录用结论。缺少证据时明确说明。";
+export { defaultAssessmentPrompt as defaultAssessment } from "../shared/assessment";
+import {
+  assessmentPrompt,
+  defaultAssessmentPrompt as defaultAssessment,
+} from "../shared/assessment";
 export const actorKey = (a: Actor) => a.user_id ?? `org:${a.org_id}`;
 export function admin(a: Actor) {
   requireThat(a.org_id, "需要招聘方权限", 403);
@@ -149,7 +152,7 @@ export async function endSession(db: DB, id: string, reason: string) {
       [
         id,
         row.assessment_version,
-        s.assessment_prompt || defaultAssessment,
+        assessmentPrompt(s.assessment_prompt || defaultAssessment),
         row.seq,
       ],
     );

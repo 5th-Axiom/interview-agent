@@ -320,6 +320,9 @@ test("assessment uses original evidence and does not overwrite human reviews", a
   ).rows[0];
   assert.equal(a.status, "ready");
   assert(a.result.items[0].sources.length);
+  assert.equal(a.result.formatVersion, 2);
+  assert.equal(a.result.conclusion.verdict, "insufficient");
+  assert.equal(a.result.testMode, true);
   assert.equal(
     (
       await pool.query("SELECT text FROM human_reviews WHERE session_id=$1", [

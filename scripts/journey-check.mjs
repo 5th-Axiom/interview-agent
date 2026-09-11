@@ -266,6 +266,7 @@ try {
     .getByRole("button", { name: "保存复核意见", exact: true })
     .click();
   await admin.getByText("人工复核意见已独立保存。", { exact: true }).waitFor();
+  await admin.getByText("评估设置", { exact: true }).click();
   await admin
     .getByLabel("本次评估要求")
     .fill(

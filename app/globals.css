@@ -703,6 +703,70 @@ textarea {
   font-size: 19px;
   margin-bottom: 18px;
 }
+.assessment-panel {
+  display: flex;
+  flex-direction: column;
+  height: 520px;
+  min-width: 0;
+  gap: 16px;
+}
+.assessment-header,
+.assessment-footer {
+  flex: 0 0 auto;
+}
+.assessment-header h2 {
+  margin: 0;
+}
+.assessment-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+  padding-right: 8px;
+}
+.assessment-conclusion h3 {
+  color: var(--color-text-primary);
+  margin: 0 0 8px;
+}
+.assessment-conclusion p {
+  color: var(--color-text-primary);
+  margin-bottom: 8px;
+}
+.assessment-points {
+  margin-top: 20px;
+}
+.assessment-points h3 {
+  font-size: inherit;
+  margin-bottom: 4px;
+}
+.assessment-sources {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.assessment-sources summary {
+  color: var(--color-text-secondary);
+}
+.assessment-sources a {
+  display: inline-block;
+  margin: 6px 12px 0 0;
+  color: var(--color-action-primary);
+}
+.assessment-settings {
+  margin: 20px 0 16px;
+}
+.assessment-settings > summary {
+  margin-bottom: 12px;
+}
+.assessment-footer {
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+}
+@media (max-width: 767px) {
+  .assessment-panel {
+    height: 480px;
+  }
+}
 .section audio {
   width: 100%;
   margin-top: 16px;

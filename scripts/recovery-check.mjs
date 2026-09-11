@@ -90,6 +90,7 @@ try {
     "Navigation warning preserves review; browser Back/Forward restores the draft",
   );
 
+  await page.getByText("评估设置", { exact: true }).click();
   const prompt = page.getByLabel("本次评估要求");
   const original = await prompt.inputValue();
   await prompt.fill("验收失败输入：只使用原始对话证据");

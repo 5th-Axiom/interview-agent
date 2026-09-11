@@ -6,6 +6,7 @@ import { Shell } from "@/components/business/shell";
 import { Button, Dialog, Field, Notice, Tag } from "@/components/base/ui";
 import { useAdminQuery } from "./use-admin";
 import { mutate } from "./api";
+import { assessmentPrompt, conclusionLabels } from "@/shared/assessment";
 import type { InterviewEvent } from "@/shared/contracts";
 import { useReviewDraft, useUnsavedChanges } from "./use-unsaved-changes";
 export function RecordDetail({ id }: { id: string }) {
@@ -24,13 +25,11 @@ export function RecordDetail({ id }: { id: string }) {
     } | null>(null),
     [feedbackUrls, setFeedbackUrls] = useState<string[]>([]);
   const [review, setReview] = useReviewDraft(id);
+  const savedPrompt = assessmentPrompt(
+    q.data?.session?.assessment_prompt ?? q.data?.assessments?.[0]?.prompt,
+  );
   const leave = useUnsavedChanges(
-    !!review.trim() ||
-      (!!q.data &&
-        prompt !==
-          (q.data.session.assessment_prompt ??
-            q.data.assessments[0]?.prompt ??
-            "")),
+    !!review.trim() || (!!q.data && prompt !== savedPrompt),
   );
   const editingPrompt = useRef(false);
   const promptRef = useRef(prompt),
@@ -46,7 +45,7 @@ export function RecordDetail({ id }: { id: string }) {
     q.data?.assessments?.find((a: any) => a.status === "ready") ?? latest;
   useEffect(() => {
     if (q.data && !editingPrompt.current) {
-      setPrompt(q.data.session.assessment_prompt ?? latest?.prompt ?? "");
+      setPrompt(savedPrompt);
       setPromptVersion(q.data.session.assessment_prompt_version);
     }
   }, [q.data?.session.assessment_prompt_version, latest?.version]);
@@ -90,9 +89,10 @@ export function RecordDetail({ id }: { id: string }) {
     ].includes(e.kind),
   );
   const sourceIds = new Set(
-    q.data.assessments.flatMap(
-      (a: any) => a.result?.items?.flatMap((item: any) => item.sources) ?? [],
-    ),
+    q.data.assessments.flatMap((a: any) => [
+      ...(a.result?.conclusion?.sources ?? []),
+      ...(a.result?.items?.flatMap((item: any) => item.sources) ?? []),
+    ]),
   );
   const auxiliary = events.filter(
     (e: InterviewEvent) =>
@@ -382,9 +382,12 @@ export function RecordDetail({ id }: { id: string }) {
           )}
         </div>
         <div className="stack">
-          <section className="section stack">
-            <div className="row between">
-              <h2>AI 评估草稿</h2>
+          <section
+            className="section assessment-panel"
+            aria-labelledby="assessment-heading"
+          >
+            <div className="row between assessment-header">
+              <h2 id="assessment-heading">面试结论</h2>
               {latest && (
                 <Tag
                   status={
@@ -393,74 +396,140 @@ export function RecordDetail({ id }: { id: string }) {
                 />
               )}
             </div>
-            <p className="small">
-              供人工复核，不代表录用结论。每条观察都应回到原始对话核实。
-            </p>
-            {assessment?.result?.testMode && (
-              <Notice>这是开发测试评估，尚未调用真实模型。</Notice>
-            )}
-            {assessment?.result?.note && (
-              <p className="small">{assessment.result.note}</p>
-            )}
-            {assessment?.result?.items?.map((item: any, i: number) => (
-              <div className="evidence" key={i}>
-                <p>{item.text}</p>
-                {item.sources.map((source: string) => (
-                  <a key={source} href={`#event-${source}`}>
-                    查看原文 #
+            <div
+              className="assessment-scroll"
+              role="region"
+              aria-label="面试评估内容"
+              tabIndex={0}
+            >
+              {assessment?.result?.testMode && (
+                <Notice>开发测试数据，尚未调用真实评估模型。</Notice>
+              )}
+              {assessment?.result?.conclusion ? (
+                <div className="assessment-conclusion">
+                  <h3>
                     {
-                      events.find((e: InterviewEvent) => e.event_id === source)
-                        ?.seq
+                      conclusionLabels[
+                        assessment.result.conclusion
+                          .verdict as keyof typeof conclusionLabels
+                      ]
                     }
-                  </a>
-                ))}
-              </div>
-            ))}
-            {latest?.error && <Notice error>{latest.error}</Notice>}
-            {assessment?.version !== latest?.version && (
-              <Notice>
-                第 {latest?.version} 版尚未完成，继续展示第{" "}
-                {assessment?.version} 版草稿。
-              </Notice>
-            )}
-            <Field label="本次评估要求">
-              <textarea
-                value={prompt}
-                onChange={(e) => {
-                  editingPrompt.current = true;
-                  setPrompt(e.target.value);
-                }}
-                maxLength={16000}
-              />
-            </Field>
-            <div className="row">
-              <Button
-                disabled={busy || !prompt.trim()}
-                onClick={() =>
-                  void run(async () => {
-                    await mutate(`sessions/${id}/assessment-prompt`, {
-                      prompt,
-                      expected_prompt_version: promptVersion,
-                    });
-                    editingPrompt.current = promptRef.current !== prompt;
-                    setPromptVersion(promptVersion + 1);
-                    setNotice("本次评估要求已保存，尚未重新生成。");
-                  })
-                }
-              >
-                保存评估要求
-              </Button>
-              <Button
-                variant="quiet"
-                disabled={busy}
-                onClick={() => (
-                  (editingPrompt.current = false),
-                  setPromptVersion(s.assessment_prompt_version),
-                  setPrompt(s.assessment_prompt ?? latest?.prompt ?? "")
-                )}
-              >
-                取消修改
-              </Button>
+                  </h3>
+                  <p>{assessment.result.conclusion.summary}</p>
+                  <AssessmentSources
+                    sources={assessment.result.conclusion.sources}
+                    events={events}
+                  />
+                </div>
+              ) : assessment?.result ? (
+                <Notice>
+                  历史版本只有观察记录，重新生成即可查看面试结论。
+                </Notice>
+              ) : (
+                <p className="small">
+                  {s.status === "ended"
+                    ? "正在整理面试结论。"
+                    : "面试结束后生成结论。"}
+                </p>
+              )}
+              {!!assessment?.result?.items?.length && (
+                <div className="assessment-points">
+                  <h3>关键依据</h3>
+                  {assessment.result.items.map((item: any, i: number) => (
+                    <div className="evidence" key={i}>
+                      <p>{item.text}</p>
+                      <AssessmentSources
+                        sources={item.sources}
+                        events={events}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {latest?.error && <Notice error>{latest.error}</Notice>}
+              {assessment?.version !== latest?.version && (
+                <Notice>
+                  第 {latest?.version} 版尚未完成，当前展示第{" "}
+                  {assessment?.version} 版。
+                </Notice>
+              )}
+              <details className="assessment-settings">
+                <summary>评估设置</summary>
+                <Field label="本次评估要求">
+                  <textarea
+                    value={prompt}
+                    onChange={(e) => {
+                      editingPrompt.current = true;
+                      setPrompt(e.target.value);
+                    }}
+                    maxLength={16000}
+                  />
+                </Field>
+                <div className="row">
+                  <Button
+                    disabled={busy || !prompt.trim()}
+                    onClick={() =>
+                      void run(async () => {
+                        await mutate(`sessions/${id}/assessment-prompt`, {
+                          prompt,
+                          expected_prompt_version: promptVersion,
+                        });
+                        editingPrompt.current = promptRef.current !== prompt;
+                        setPromptVersion(promptVersion + 1);
+                        setNotice("本次评估要求已保存，尚未重新生成。");
+                      })
+                    }
+                  >
+                    保存评估要求
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    disabled={busy}
+                    onClick={() => (
+                      (editingPrompt.current = false),
+                      setPromptVersion(s.assessment_prompt_version),
+                      setPrompt(savedPrompt)
+                    )}
+                  >
+                    取消修改
+                  </Button>
+                </div>
+              </details>
+              {q.data.assessments.length > 1 && (
+                <details>
+                  <summary>查看历史评估版本</summary>
+                  {q.data.assessments.slice(1).map((a: any) => (
+                    <div className="evidence" key={a.version}>
+                      <strong>第 {a.version} 版</strong>
+                      <Tag status={a.status} />
+                      {a.result?.conclusion && (
+                        <>
+                          <p>
+                            <strong>
+                              {
+                                conclusionLabels[
+                                  a.result.conclusion
+                                    .verdict as keyof typeof conclusionLabels
+                                ]
+                              }
+                            </strong>
+                          </p>
+                          <p>{a.result.conclusion.summary}</p>
+                        </>
+                      )}
+                      <p className="small">{a.prompt}</p>
+                      {a.result?.items?.map((v: any, i: number) => (
+                        <p key={i}>{v.text}</p>
+                      ))}
+                    </div>
+                  ))}
+                </details>
+              )}
+            </div>
+            <div className="row between assessment-footer">
+              <span className="small">
+                第 {assessment?.version ?? 0} 版 · AI 评估
+              </span>
               <Button
                 disabled={
                   busy ||
@@ -475,24 +544,6 @@ export function RecordDetail({ id }: { id: string }) {
                 重新生成评估
               </Button>
             </div>
-            <p className="small">
-              当前第 {assessment?.version ?? 0} 版 · 仅影响本次面试
-            </p>
-            {q.data.assessments.length > 1 && (
-              <details>
-                <summary>查看历史评估版本</summary>
-                {q.data.assessments.slice(1).map((a: any) => (
-                  <div className="evidence" key={a.version}>
-                    <strong>第 {a.version} 版</strong>
-                    <Tag status={a.status} />
-                    <p className="small">{a.prompt}</p>
-                    {a.result?.items?.map((v: any, i: number) => (
-                      <p key={i}>{v.text}</p>
-                    ))}
-                  </div>
-                ))}
-              </details>
-            )}
           </section>
           <section className="section stack">
             <h2>语音诊断</h2>
@@ -666,5 +717,27 @@ export function RecordDetail({ id }: { id: string }) {
         </div>
       </div>
     </Shell>
+  );
+}
+
+function AssessmentSources({
+  sources,
+  events,
+}: {
+  sources: string[];
+  events: InterviewEvent[];
+}) {
+  if (!sources?.length) return null;
+  return (
+    <details className="assessment-sources">
+      <summary>查看依据</summary>
+      <div>
+        {sources.map((source) => (
+          <a key={source} href={`#event-${source}`}>
+            原文 #{events.find((e) => e.event_id === source)?.seq}
+          </a>
+        ))}
+      </div>
+    </details>
   );
 }

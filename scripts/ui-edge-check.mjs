@@ -143,6 +143,7 @@ try {
     await new Promise((r) => setTimeout(r, 1000));
   }
   await page.goto(`${testBase}/admin/interviews/${result.sid}`);
+  await page.getByText("评估设置", { exact: true }).click();
   const field = page.getByLabel("本次评估要求");
   await field.waitFor();
   const original = await field.inputValue();
