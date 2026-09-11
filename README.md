@@ -88,6 +88,8 @@ NODE_ENV=production npm run worker
 
 测试服务器的独立 Docker Compose、IP HTTPS 证书、全站账号登录、更新与回滚见 [测试部署说明](docs/staging.md)。测试入口登录保护页面、API 和 WebSocket；通过后，候选人和招聘方仍分别完成业务登录。密钥只保存在部署目录外的私有环境文件中。
 
+更新已初始化的测试服务器：先提交代码，再运行 `npm run deploy:staging`。命令通过 `ssh cd` 发布当前提交，复用远端密钥，自动构建、迁移、更新服务和检查健康；`npm run deploy:staging -- --check` 只检查部署条件。
+
 不要记录请求 Cookie、Authorization、音频内容或播放 URL 查询参数。Next 请求日志已关闭；部署侧也要避免把短期播放票据写入访问日志。录音通过登录权限和 5 分钟签名票据代理，支持 HTTP Range；S3 对象不公开。
 
 ## 验证
@@ -111,7 +113,7 @@ npm run test:journey
 npm run test:recovery
 ```
 
-`npm test` 自动建立独立 `interview_agent_test` 数据库并迁移，不清空开发库。26 项测试覆盖真实数据库事务、OTP、安全配置、摘要、评估、SSE 分包、备用模型、取消、分阶段工具权限、模拟流式 ASR 的修订与轮换，以及测试入口鉴权、过期、口令轮换、同源校验和限流。供应商协议测试使用本地 HTTP / WebSocket 服务器。
+`npm test` 自动建立独立 `interview_agent_test` 数据库并迁移，不清空开发库。28 项测试覆盖真实数据库事务、OTP、安全配置、摘要、评估、SSE 分包、备用模型、取消、分阶段工具权限、模拟流式 ASR 的修订与轮换，以及测试入口鉴权、过期、口令轮换、同源校验、限流和部署命令的上传边界与失败传递。供应商协议测试使用本地 HTTP / WebSocket 服务器。
 
 `test:browser` / `test:mobile` / `test:relay` 使用 `npm run dev:test` 对应的明确测试语音服务；`test:live` 使用当前真实供应商服务，并需要 `test:providers` 生成的合成音频。不要在同一端口同时启动两套服务。
 

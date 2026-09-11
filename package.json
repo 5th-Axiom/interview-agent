@@ -18,6 +18,7 @@
     "test:relay": "node scripts/relay-check.mjs",
     "test:mobile": "node scripts/mobile-check.mjs",
     "setup": "node scripts/setup.mjs",
+    "deploy:staging": "bash scripts/deploy-staging.sh",
     "test:edges": "node scripts/edge-check.mjs",
     "test:providers": "DEV_TEST_MODE=false tsx --env-file=.env.local scripts/provider-check.ts",
     "test:live": "node scripts/live-check.mjs",
