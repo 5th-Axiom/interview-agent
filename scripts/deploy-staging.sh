@@ -45,8 +45,8 @@ tar -xf - -C \"\$release\"
 bash \"\$release/deploy/staging-release.sh\" '$revision'
 " < "$archive"
 
-echo "Deployed ${revision:0:12}: https://47.108.226.96:9443"
+echo "Deployed ${revision:0:12}: https://test.interview.energylt.com"
 if ! curl --fail --silent --show-error --connect-timeout 5 --max-time 8 \
-  https://47.108.226.96:9443/healthz >/dev/null 2>&1; then
-  echo 'Server checks passed, but public HTTPS is unreachable from this network. Check TCP 9443 ingress.' >&2
+  https://test.interview.energylt.com/healthz >/dev/null 2>&1; then
+  echo 'Server checks passed, but public HTTPS is unreachable from this network. Check domain DNS, ESA certificate and origin settings.' >&2
 fi

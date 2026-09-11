@@ -1,10 +1,10 @@
-# IP 测试环境
+# 测试环境部署
 
 ## 当前部署
 
 - SSH：`ssh cd`；项目目录 `/home/deploy/interview-agent`。
-- 预定入口：`https://47.108.226.96:9443`；候选人 `/interview?entry=demo`，招聘方 `/admin/roles`。
-- 2026-09-11：五个容器运行、迁移和种子完成，服务器内 HTTPS、鉴权和真实语音协议链路通过。外网 9443 尚不可达，须放行云安全组 / 上游入口的 TCP 9443 后再验收外网浏览器。IP 443 为已有 Aural 服务，未替换。
+- 域名入口：`https://test.interview.energylt.com`；候选人 `/interview?entry=demo`，招聘方 `/admin/roles`。
+- 2026-09-11 改用域名：浏览器 TLS 由现有 ESA 接入终结，回源至 `47.108.226.96:80`，Nginx 按域名转发 Web / Relay。旧 IP:9443 跳转到新域名，IP:443 的 Aural 服务保留。域名目前的 ESA 证书尚不匹配，公网 HTTPS 验收须在控制台补齐证书和回源设置后完成。
 - 独立 Compose 名称 `interview-agent-staging`；数据库和对象存储无宿主端口，Web / Relay 仅绑定 `127.0.0.1:13100/13101`。不要对本项目执行 `down -v`，不要删除其他项目的卷。
 - 真实供应商为 DeepSeek、DashScope、TokenDance；候选人使用显式开启的测试验证码 `123456`，没有发送真实短信。页面标识供应商联调及测试验证码。
 
@@ -30,8 +30,8 @@ NODE_ENV=production
 APP_ENV=staging
 DEV_TEST_MODE=false
 ALLOW_TEST_OTP=true
-APP_URL=https://47.108.226.96:9443
-NEXT_PUBLIC_RELAY_URL=wss://47.108.226.96:9443/ws
+APP_URL=https://test.interview.energylt.com
+NEXT_PUBLIC_RELAY_URL=wss://test.interview.energylt.com/ws
 TEST_ACCESS_USERNAME=tester
 ```
 
@@ -47,7 +47,7 @@ TEST_ACCESS_USERNAME=tester
 npm run deploy:staging
 ```
 
-命令通过 `ssh cd` 将当前 Git 提交上传到独立 release 目录，在服务器构建带提交编号的镜像，执行迁移与幂等种子，更新 Web / Relay / Worker，等待容器健康，并检查可信 HTTPS、未登录页面跳转和 API 拒绝访问。成功后更新 `shared/deploy.env` 的镜像标签与 `current` 链接。源码由 `git archive HEAD` 打包；工作区有未提交内容时拒绝部署，服务器上的密钥和持久化数据继续复用。
+命令通过 `ssh cd` 将当前 Git 提交上传到独立 release 目录，在服务器构建带提交编号的镜像，执行迁移与幂等种子，更新 Web / Relay / Worker，等待容器健康，并检查源站健康、未登录页面跳转和 API 拒绝访问；公网 HTTPS 单独检查。成功后更新 `shared/deploy.env` 的镜像标签与 `current` 链接。源码由 `git archive HEAD` 打包；工作区有未提交内容时拒绝部署，服务器上的密钥和持久化数据继续复用。
 
 只检查 SSH、Docker 和服务器配置、不部署：
 
@@ -55,7 +55,7 @@ npm run deploy:staging
 npm run deploy:staging -- --check
 ```
 
-该命令用于更新已经初始化的这台测试服务器；首次配置密钥、Nginx、证书及安全组仍按本文完成。它不修改 Nginx、证书、443 上的服务或云安全组，也不替你提交代码。项目级锁防止并发发布；失败返回非零并保留旧镜像与数据。若失败发生在替换容器之后，可能已有部分服务更新，须检查错误并按下面说明回滚应用；数据库迁移不会自动倒退。公网健康检查失败会单独提示，不把服务器内部通过误称为公网已通。
+该命令用于更新已经初始化的这台测试服务器；首次配置密钥、Nginx、证书及安全组仍按本文完成。它不修改 Nginx、ESA 证书、其他站点或云安全组，也不替你提交代码。项目级锁防止并发发布；失败返回非零并保留旧镜像与数据。若失败发生在替换容器之后，可能已有部分服务更新，须检查错误并按下面说明回滚应用；数据库迁移不会自动倒退。公网健康检查失败会单独提示，不把服务器内部通过误称为公网已通。
 
 以下为手动操作和故障恢复命令：
 
@@ -63,7 +63,7 @@ npm run deploy:staging -- --check
 
 ```bash
 docker build -f deploy/Dockerfile \
-  --build-arg NEXT_PUBLIC_RELAY_URL=wss://47.108.226.96:9443/ws \
+  --build-arg NEXT_PUBLIC_RELAY_URL=wss://test.interview.energylt.com/ws \
   -t interview-agent:<release> .
 ```
 
@@ -81,30 +81,40 @@ docker compose --env-file ../../shared/deploy.env -f deploy/compose.staging.yaml
 
 回滚时将镜像标签改回保留的上一版本并重新 `up -d`。此方法仅适用于数据库迁移向后兼容的版本；涉及破坏性 schema 变更前须备份并评估恢复。环境文件、数据库卷和对象卷保留在 release 之外；不要使用全机 Docker 清理命令。
 
-## IP HTTPS 与续期
+## 域名与 ESA 回源
 
-当前证书为 Let's Encrypt 签发的可信 IP 证书，2026-09-11 首次签发、2026-09-17 到期。使用独立 Certbot 5.8 虚拟环境 `/opt/interview-certbot` 及配置目录，避免与其他站点或系统旧 Certbot 混用。
+当前域名已有 ESA 代理解析。源站配置采用同机 Alice 测试入口的接入方式：浏览器通过 HTTPS 访问 ESA，ESA 使用 HTTP:80 回源，应用通过 `X-Forwarded-Proto: https` 识别浏览器协议并设置 Secure Cookie。仅修改源站 Nginx 不能修复边缘节点的证书。
 
-1. 将 `deploy/nginx.acme.conf` 安装为 `/etc/nginx/snippets/interview-agent-acme.conf`，在该 IP 的现有 80 端口 server 内 include；仅为 `/.well-known/acme-challenge/` 提供 `/var/www/interview-agent-acme` 文件。保留原业务路由，80 必须对外可达用于续期。
-2. 首次签发：
+ESA 控制台需为 `test.interview.energylt.com` 配置：
+
+| 项目            | 设置                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------ |
+| 源站地址        | `47.108.226.96`                                                                      |
+| 回源协议 / 端口 | HTTP / 80                                                                            |
+| 回源 Host       | `test.interview.energylt.com`（保留访问域名）                                        |
+| 边缘 HTTPS 证书 | 覆盖 `test.interview.energylt.com` 的有效证书；`*.energylt.com` 不覆盖这个多级子域名 |
+| 客户端 HTTP     | 跳转 HTTPS                                                                           |
+| WebSocket       | 开启，并让 `/ws` 回源至同一域名和源站                                                |
+| 缓存            | 本测试域名绕过缓存，尤其是登录、API、私有录音及面试页面                              |
+
+官方配置参考：[边缘证书](https://help.aliyun.com/zh/edge-security-acceleration/esa/user-guide/configure-edge-certificates/)、[回源规则](https://help.aliyun.com/zh/edge-security-acceleration/esa/user-guide/back-to-source-rule-overview/)。域名使用 80/443，无需为访客开放 9443。若改为 DNS 直连，应同时添加源站域名 HTTPS 证书、443 虚拟主机和 HTTP 跳转，不能只关闭 ESA 代理。
+
+源站安装对应配置：
 
 ```bash
-sudo /opt/interview-certbot/bin/certbot certonly \
-  --config-dir /etc/interview-agent/letsencrypt \
-  --work-dir /var/lib/interview-agent-acme \
-  --logs-dir /var/log/interview-agent-acme \
-  --cert-name interview-agent-ip --ip-address 47.108.226.96 \
-  --preferred-profile shortlived --webroot -w /var/www/interview-agent-acme \
-  --agree-tos --non-interactive --register-unsafely-without-email
+sudo install -m 0644 deploy/nginx.staging-proxy.conf /etc/nginx/snippets/interview-agent-proxy.conf
+sudo install -m 0644 deploy/nginx.staging.conf /etc/nginx/sites-available/interview-agent-staging.conf
+sudo ln -sfn /etc/nginx/sites-available/interview-agent-staging.conf /etc/nginx/sites-enabled/interview-agent-staging.conf
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
-3. 安装 `deploy/nginx.staging.conf` 为 Nginx 站点并启用，`nginx -t` 后 reload。9443 的 Host 必须保留端口；`/ws` 单独反代 Relay。不要为部署便利覆盖已有 443 服务。
-4. 将 `deploy/interview-agent-certbot.service`、`.timer` 安装到 `/etc/systemd/system/`，将 `deploy/reload-nginx.sh` 安装到 `/etc/interview-agent/reload-nginx.sh`（0755）。执行 `systemctl daemon-reload`、`systemctl enable --now interview-agent-certbot.timer`。每天两次检查续期，续期后检查并 reload Nginx。
+`/ws` 独立反代 Relay，保留 Upgrade、长连接超时及关闭缓冲；页面和 API 反代 Web，保留原始 Host 和登录保护。原 Nginx 配置与环境文件的切换备份为服务器 `shared/nginx.before-domain.conf` 和 `shared/app.before-domain.env`；环境备份仍为私有文件。
 
-检查 `systemctl list-timers interview-agent-certbot.timer`、`journalctl -u interview-agent-certbot.service`，并定期执行同一配置目录下的 `certbot renew --dry-run`。2026-09-11 已通过模拟续期。证书有效期短，不能关闭续期任务。证书私钥不进入应用容器或 Git。
+旧 IP:9443 跳转继续使用原独立 IP 证书。`interview-agent-certbot.timer` 每天两次检查续期，证书目录 `/etc/interview-agent/letsencrypt`，Certbot 位于 `/opt/interview-certbot`。原 IP 的 80 端口 ACME 路径和续期钩子保留；这张证书不替代 ESA 的域名证书。证书私钥不进入容器或 Git。
 
 ## 验证边界
 
 本次自动测试 26 项、类型检查、本地和 Linux 容器构建通过。服务器供应商检查与通过 SSH 通道的完整协议验收覆盖：匿名页面 / API / WebSocket 拒绝、错误与正确入口登录、招聘与候选人登录、真实 ASR / LLM / TTS、可靠结束、Worker 评估、私有录音生成和退出。协议验收使用合成 PCM 与模拟播放回执，不能代替外网浏览器实际播放或真人麦克风验收。
 
-PC 1440px 浅色与 H5 390px 深色入口表单已通过真实 Chrome 截图检查，无横向溢出。另用 Chrome 经 SSH CONNECT 通道访问原始 IP HTTPS 地址，保留证书校验，实际从页面验证两端的匿名跳转、错误 / 正确密码、业务登录、退出与 Cookie 清除；浏览器确认安全上下文和麦克风 API 存在，无 JavaScript 异常。该检查不代表公网 9443 可达，也没有模拟真人麦克风。外网端口放行后仍需按上面的步骤检查实际麦克风和 WebSocket。
+PC 1440px 浅色与 H5 390px 深色入口表单已通过真实 Chrome 截图检查，无横向溢出。另用 Chrome 经 SSH CONNECT 通道访问原始 IP HTTPS 地址，保留证书校验，实际从页面验证两端的匿名跳转、错误 / 正确密码、业务登录、退出与 Cookie 清除；浏览器确认安全上下文和麦克风 API 存在，无 JavaScript 异常。该检查不代表公网 9443 可达，也没有模拟真人麦克风。域名证书与回源配置完成后，仍需按上面的步骤检查公网实际麦克风和 WebSocket。

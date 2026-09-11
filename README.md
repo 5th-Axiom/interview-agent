@@ -86,7 +86,7 @@ NODE_ENV=production npm run worker
 
 参考 [Caddy 配置](deploy/Caddyfile.example) 使用同源 `/ws` 反代 Relay。设置 `APP_URL`、`NEXT_PUBLIC_RELAY_URL` 后重新构建；IP 入口必须保留端口。麦克风在 localhost 或可信 HTTPS 安全上下文中使用；手机需要可达的可信 HTTPS 入口，域名或具有有效 IP 证书的地址均可。
 
-测试服务器的独立 Docker Compose、IP HTTPS 证书、全站账号登录、更新与回滚见 [测试部署说明](docs/staging.md)。测试入口登录保护页面、API 和 WebSocket；通过后，候选人和招聘方仍分别完成业务登录。密钥只保存在部署目录外的私有环境文件中。
+测试服务器的独立 Docker Compose、域名与 ESA 回源、全站账号登录、更新与回滚见 [测试部署说明](docs/staging.md)。测试入口登录保护页面、API 和 WebSocket；通过后，候选人和招聘方仍分别完成业务登录。密钥只保存在部署目录外的私有环境文件中。
 
 更新已初始化的测试服务器：先提交代码，再运行 `npm run deploy:staging`。命令通过 `ssh cd` 发布当前提交，复用远端密钥，自动构建、迁移、更新服务和检查健康；`npm run deploy:staging -- --check` 只检查部署条件。
 

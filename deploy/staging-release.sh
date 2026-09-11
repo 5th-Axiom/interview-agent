@@ -3,8 +3,8 @@ set -euo pipefail
 umask 077
 
 staging_root=/home/deploy/interview-agent
-staging_url=https://47.108.226.96:9443
-staging_relay=wss://47.108.226.96:9443/ws
+staging_url=https://test.interview.energylt.com
+staging_relay=wss://test.interview.energylt.com/ws
 for command in docker python3 flock curl tar; do command -v "$command" >/dev/null; done
 docker info >/dev/null
 docker compose version >/dev/null
@@ -38,7 +38,7 @@ for key in ('INTERVIEW_IMAGE', 'INTERVIEW_DB_PASSWORD', 'INTERVIEW_STORAGE_USER'
         sys.exit(f'Missing deployment {key}.')
 if sum(line.startswith('INTERVIEW_IMAGE=') for line in (root / 'shared/deploy.env').read_text().splitlines()) != 1:
     sys.exit('deploy.env must contain exactly one INTERVIEW_IMAGE entry.')
-print('SSH, Docker, private configuration and IP target checked.')
+print('SSH, Docker, private configuration and domain target checked.')
 PY
 if [[ "${1:-}" == --check ]]; then exit 0; fi
 
@@ -71,9 +71,10 @@ compose up -d --wait --wait-timeout 120
 check_status() {
   local actual
   actual="$(curl --silent --show-error --connect-timeout 5 --max-time 10 \
-    --resolve 47.108.226.96:9443:127.0.0.1 -o /dev/null -w '%{http_code}' "$staging_url$1")"
+    -H "Host: test.interview.energylt.com" -H "X-Forwarded-Proto: https" \
+    -o /dev/null -w '%{http_code}' "http://127.0.0.1$1")"
   if [[ "$actual" != "$2" ]]; then
-    echo "HTTPS check failed for $1: expected $2, received $actual" >&2
+    echo "Origin check failed for $1: expected $2, received $actual" >&2
     return 1
   fi
 }
@@ -99,4 +100,4 @@ finally:
 PY
 ln -sfn "$release" "$staging_root/current"
 compose ps --format 'table {{.Service}}\t{{.Image}}\t{{.Status}}'
-echo 'Trusted HTTPS, page protection and API protection passed.'
+echo 'Origin health, page protection and API protection passed; public TLS is checked separately.'
