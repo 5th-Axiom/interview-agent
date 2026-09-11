@@ -33,6 +33,12 @@ export function RecordDetail({ id }: { id: string }) {
             "")),
   );
   const editingPrompt = useRef(false);
+  const promptRef = useRef(prompt),
+    reviewRef = useRef(review),
+    reasonRef = useRef(reason);
+  promptRef.current = prompt;
+  reviewRef.current = review;
+  reasonRef.current = reason;
   const lock = useRef(false);
   const [promptVersion, setPromptVersion] = useState(0);
   const latest = q.data?.assessments?.[0];
@@ -140,7 +146,7 @@ export function RecordDetail({ id }: { id: string }) {
                   status: decision.status,
                   reason: decision.reason,
                 });
-                setReason("");
+                if (reasonRef.current === decision.reason) setReason("");
                 setConfirmRetry(null);
                 setNotice(
                   decision.status === "approved"
@@ -174,7 +180,8 @@ export function RecordDetail({ id }: { id: string }) {
                   expected_prompt_version: promptVersion,
                   expected_assessment_version: s.assessment_version,
                 });
-                editingPrompt.current = false;
+                editingPrompt.current = promptRef.current !== prompt;
+                setPromptVersion(promptVersion + 1);
                 setNotice("已安排重新生成，原评估和人工意见仍保留。");
               });
             }}
@@ -240,7 +247,7 @@ export function RecordDetail({ id }: { id: string }) {
                 记录了 {recording.missing.length} 处未完整确认或缺失范围。
               </p>
             )}
-            {recording?.status === "failed" && (
+            {["failed", "partial"].includes(recording?.status) && (
               <Button
                 onClick={() =>
                   void run(async () => {
@@ -352,20 +359,22 @@ export function RecordDetail({ id }: { id: string }) {
                   : `体验评分：${feedback.rating ?? "未评分"} · ${(feedback.tags ?? []).join("、")}`}
               </p>
               <p>{feedback.text}</p>
-              <Button
-                variant="quiet"
-                onClick={() =>
-                  void run(async () => {
-                    const r = await mutate(
-                      `sessions/${id}/feedback-recordings`,
-                    );
-                    setFeedbackUrls(r.urls);
-                    if (!r.urls.length) setNotice("没有语音反馈。");
-                  })
-                }
-              >
-                查看语音说明
-              </Button>
+              {!feedback.skipped && feedback.audio_ids?.length > 0 && (
+                <Button
+                  variant="quiet"
+                  onClick={() =>
+                    void run(async () => {
+                      const r = await mutate(
+                        `sessions/${id}/feedback-recordings`,
+                      );
+                      setFeedbackUrls(r.urls);
+                      if (!r.urls.length) setNotice("没有语音反馈。");
+                    })
+                  }
+                >
+                  查看语音说明
+                </Button>
+              )}
               {feedbackUrls.map((u) => (
                 <audio key={u} controls src={u} />
               ))}
@@ -433,7 +442,8 @@ export function RecordDetail({ id }: { id: string }) {
                       prompt,
                       expected_prompt_version: promptVersion,
                     });
-                    editingPrompt.current = false;
+                    editingPrompt.current = promptRef.current !== prompt;
+                    setPromptVersion(promptVersion + 1);
                     setNotice("本次评估要求已保存，尚未重新生成。");
                   })
                 }
@@ -485,6 +495,79 @@ export function RecordDetail({ id }: { id: string }) {
             )}
           </section>
           <section className="section stack">
+            <h2>语音诊断</h2>
+            <p className="small">
+              记录收音、生成、合成、播放和连接阶段；耗时为对应服务内的测量，不能相加推断真人说话结束时间。
+            </p>
+            <details>
+              <summary>
+                查看最近 {q.data.telemetry?.length ?? 0} 条阶段记录
+              </summary>
+              <div className="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>时间</th>
+                      <th>连接</th>
+                      <th>阶段</th>
+                      <th>耗时</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(q.data.telemetry ?? []).map((t: any) => (
+                      <tr key={t.id}>
+                        <td>
+                          {new Date(t.created_at).toLocaleTimeString("zh-CN")}
+                        </td>
+                        <td>{t.epoch}</td>
+                        <td>
+                          {(
+                            {
+                              capture_gap: "采音间隔",
+                              capture_start: "采音开始",
+                              capture_stop: "采音停止",
+                              capture_end: "采音进度",
+                              relay_receive: "收到采音",
+                              input_queue: "输入排队",
+                              user_audio_durable: "采音已保存",
+                              asr_send: "识别送入进度",
+                              asr_interim: "识别临时结果",
+                              asr_final: "识别最终结果",
+                              llm_request: "请求模型",
+                              speakable_text: "可朗读文本",
+                              tts_request: "请求合成",
+                              input_gap: "音频序号缺口",
+                              input_starved: "输入中断",
+                              utterance_committed: "回答已保存",
+                              llm_first_delta: "模型首段",
+                              tts_first_pcm: "合成首包",
+                              first_audio_sent: "首包已发送",
+                              play_start: "开始播放",
+                              local_cancel: "本地停止播放",
+                              cancel: "回复已取消",
+                              output_repair: "朗读内容重试",
+                              control_dispatch: "控制处理",
+                              clock_sync: "时钟校准",
+                              context_ready: "上下文就绪",
+                              first_audio_durable: "首包已持久保存",
+                              audio_send: "音频发送",
+                              play_end: "播放结束",
+                            } as Record<string, string>
+                          )[t.stage] ?? t.stage}
+                        </td>
+                        <td>
+                          {t.elapsed_ms == null
+                            ? "—"
+                            : `${Math.round(t.elapsed_ms)} ms`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </section>
+          <section className="section stack">
             <h2>人工复核意见</h2>
             <Field label="招聘方判断">
               <textarea
@@ -500,7 +583,7 @@ export function RecordDetail({ id }: { id: string }) {
               onClick={() =>
                 void run(async () => {
                   await mutate(`sessions/${id}/review`, { text: review });
-                  setReview("");
+                  if (reviewRef.current === review) setReview("");
                   setNotice("人工复核意见已独立保存。");
                 })
               }

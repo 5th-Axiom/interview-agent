@@ -3,6 +3,8 @@ x-app: &app
   image: ${INTERVIEW_IMAGE:?Set INTERVIEW_IMAGE to the release tag}
   restart: unless-stopped
   init: true
+  environment:
+    TRUST_PROXY: "true"
   env_file: ${INTERVIEW_ENV_FILE:?Set an absolute private environment file path}
   volumes:
     - ${INTERVIEW_ENV_FILE}:/app/.env.local:ro

@@ -17,7 +17,7 @@ function fixture() {
   for (const dir of ["scripts", "deploy", "bin", ".local"])
     mkdirSync(path.join(root, dir));
   for (const file of ["scripts/deploy-staging.sh", "deploy/staging-release.sh"])
-    copyFileSync(file, path.join(root, file));
+    copyFileSync(new URL(`../${file}`, import.meta.url), path.join(root, file));
   writeFileSync(path.join(root, ".gitignore"), ".local/\n.env.local\nbin/\n");
   writeFileSync(
     path.join(root, ".env.local"),

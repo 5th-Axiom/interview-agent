@@ -14,7 +14,16 @@ export function useRoleSelection(
   const callback = useRef(onSelect);
   callback.current = onSelect;
   async function select(text: string) {
-    const r = await mutate("selection", { entry, text });
+    const r = await mutate("selection", {
+      entry,
+      text,
+      history: history.current,
+    });
+    history.current = [
+      ...history.current,
+      { role: "user", content: r.text },
+      { role: "assistant", content: r.message },
+    ].slice(-6) as typeof history.current;
     setMessage(r.message);
     if (r.role_id) callback.current(r.role_id, r.text);
   }
@@ -59,7 +68,7 @@ export function useRoleSelection(
           cap?.stop();
           callback.current(r.role_id, r.text);
         } else if (r.pcm) {
-          cap?.mute(true);
+          await cap?.mute(true);
           playback = new AudioContext();
           await playback.resume();
           if (closed) {
@@ -87,13 +96,17 @@ export function useRoleSelection(
           await playback.close();
           playback = null;
           if (!closed) {
-            cap?.mute(false);
+            await cap?.mute(false);
             setMessage(r.message);
           }
         }
       } catch {
         if (!closed) setMessage("语音选岗暂时不可用，请直接点击岗位。");
       } finally {
+        if (playback && playback.state !== "closed")
+          await playback.close().catch(() => {});
+        playback = null;
+        if (!closed) await cap?.mute(false).catch(() => {});
         busy = false;
       }
     };

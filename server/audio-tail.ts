@@ -1,39 +1,56 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import { clientEvent } from "../shared/contracts";
-import { access, append, enqueue } from "./business";
+import { access, enqueue, append } from "./business";
 import type { Actor } from "./auth";
-import { transaction, requireThat } from "./db";
-import { putObject, wav } from "./storage";
-// Narrow finalization window: authenticated owner, old lease only, captured before the end.
+import { transaction, requireThat, type DB } from "./db";
+import { savePlayback, saveUserAudio } from "./audio-store";
 export const tailSchema = z.object({
   epoch: z.number().int(),
+  text: z
+    .array(
+      z.object({
+        event_id: z.string().uuid(),
+        text: z.string().trim().min(1).max(24000),
+      }),
+    )
+    .max(100)
+    .default([]),
+  inputs: z
+    .array(
+      clientEvent.transform((e) => {
+        requireThat(e.type === "input_state", "需要输入状态");
+        return e;
+      }),
+    )
+    .max(100)
+    .default([]),
   audio: z
     .array(
-      clientEvent.transform((event) => {
-        requireThat(event.type === "audio", "需要音频事件");
-        return event;
+      clientEvent.transform((e) => {
+        requireThat(e.type === "audio", "需要音频事件");
+        return e;
       }),
     )
     .max(40)
     .default([]),
   played: z
     .array(
-      clientEvent.transform((event) => {
-        requireThat(event.type === "played", "需要播放事件");
-        return event;
+      clientEvent.transform((e) => {
+        requireThat(e.type === "played", "需要播放事件");
+        return e;
       }),
     )
-    .max(24)
+    .max(40)
     .default([]),
 });
 export async function saveAudioTail(
   actor: Actor,
   sessionId: string,
   input: unknown,
+  allowRecovery = false,
 ) {
   const body = tailSchema.parse(input);
-  return transaction(async (db) => {
+  const authorize = async (db: DB, packet?: any) => {
     const s = await access(db, actor, sessionId, true);
     requireThat(
       s.user_id === actor.user_id ||
@@ -41,105 +58,97 @@ export async function saveAudioTail(
       "无权补传",
       403,
     );
+    const ended = s.status === "ended";
     requireThat(
-      s.status === "ended" &&
-        Date.now() - s.ended_at.getTime() < 30000 &&
-        s.epoch === body.epoch + 1,
+      ended ? Date.now() - s.ended_at.getTime() < 30000 : allowRecovery,
       "补传窗口已关闭",
+      409,
+    );
+    const sourceEpoch = packet?.source_epoch ?? packet?.epoch ?? body.epoch;
+    const connection = (
+      await db.query(
+        "SELECT * FROM voice_connections WHERE session_id=$1 AND epoch=$2",
+        [sessionId, sourceEpoch],
+      )
+    ).rows[0];
+    requireThat(
+      connection ||
+        (ended &&
+          s.epoch === sourceEpoch + 1 &&
+          s.runtime_config.protocol === 1),
+      "补传连接无效",
       409,
     );
     const cutoff = Math.min(
       3600000,
-      s.ended_at.getTime() - s.started_at.getTime(),
+      (ended ? s.ended_at.getTime() : Date.now()) - s.started_at.getTime(),
+      connection?.retired_at
+        ? connection.retired_at.getTime() - s.started_at.getTime()
+        : Infinity,
     );
-    let changed = false;
-    for (const packet of body.audio) {
+    if (packet?.type === "audio")
       requireThat(
-        packet.epoch === body.epoch &&
-          packet.start_ms + packet.duration_ms <= cutoff + 250,
-        "音频超出结束时间",
+        packet.start_ms + packet.duration_ms <= cutoff + 250,
+        "音频超出捕获范围",
       );
-      const pcm = Buffer.from(packet.pcm, "base64");
-      requireThat(
-        pcm.length > 0 &&
-          pcm.length % 2 === 0 &&
-          Math.abs(pcm.length / 32 - packet.duration_ms) < 2,
-        "音频格式无效",
-      );
-      const checksum = createHash("sha256").update(pcm).digest("hex");
-      const old = (
+    if (packet?.type === "played" && packet.played_ms > 0)
+      requireThat((packet.started_ms ?? 0) <= cutoff + 250, "播放范围无效");
+    return s;
+  };
+  await transaction((db) => authorize(db));
+  requireThat(
+    body.audio.reduce((n, p) => n + p.duration_ms, 0) <= 8250,
+    "待补传音频超过容量",
+  );
+  for (const packet of body.audio)
+    await saveUserAudio(sessionId, packet, (db) => authorize(db, packet));
+  for (const packet of body.played)
+    await transaction(async (db) => {
+      const s = await authorize(db, packet);
+      await savePlayback(db, s, packet);
+      if (s.status === "ended") {
+        await enqueue(db, "recording", sessionId);
         await db.query(
-          "SELECT checksum FROM chunks WHERE session_id=$1 AND track='user' AND chunk_no=$2",
-          [sessionId, packet.chunk_no],
-        )
-      ).rows[0];
-      if (old) {
-        requireThat(old.checksum === checksum, "音频编号冲突", 409);
-        continue;
-      }
-      const key = `${sessionId}/user/${packet.chunk_no}.wav`;
-      await putObject(key, wav(pcm));
-      await db.query(
-        "INSERT INTO chunks(id,session_id,track,chunk_no,object_key,checksum,start_ms,duration_ms,sample_rate,epoch) VALUES($1::uuid,$2,'user',$1::text,$3,$4,$5,$6,16000,$7)",
-        [
-          packet.chunk_no,
-          sessionId,
-          key,
-          checksum,
-          Math.round(packet.start_ms),
-          Math.round(packet.duration_ms),
-          body.epoch,
-        ],
-      );
-      changed = true;
-    }
-    for (const packet of body.played) {
-      requireThat(
-        packet.epoch === body.epoch && (packet.started_ms ?? 0) <= cutoff,
-        "播放范围无效",
-      );
-      const row = (
-        await db.query(
-          "UPDATE chunks SET played_ms=GREATEST(played_ms,LEAST(duration_ms,$5::int)),start_ms=COALESCE($6::bigint,start_ms) WHERE id=$1 AND session_id=$2 AND response_id=$3 AND epoch=$4 AND played_ms<$5 RETURNING *",
-          [
-            packet.chunk_id,
-            sessionId,
-            packet.response_id,
-            body.epoch,
-            Math.round(packet.played_ms),
-            packet.started_ms === undefined
-              ? null
-              : Math.round(packet.started_ms),
-          ],
-        )
-      ).rows[0];
-      if (row) {
-        changed = true;
-        await append(db, sessionId, {
-          kind: "playback",
-          response_id: packet.response_id,
-          epoch: body.epoch,
-          metadata: {
-            chunk_id: row.id,
-            event_id: row.event_id,
-            played_ms: row.played_ms,
-            duration_ms: row.duration_ms,
-          },
-        });
-      }
-    }
-    if (changed) {
-      for (const kind of ["recording", "transcription"]) {
-        await enqueue(db, kind, sessionId);
-        await db.query(
-          "UPDATE jobs SET state='pending',attempts=0,lease_token=NULL,available_at=now()+interval '2 seconds' WHERE session_id=$1 AND kind=$2",
-          [sessionId, kind],
+          "UPDATE jobs SET state='pending',attempts=0,lease_token=NULL,available_at=now()+interval '2 seconds' WHERE session_id=$1 AND kind='recording'",
+          [sessionId],
         );
       }
-    }
-    return {
-      audio: body.audio.map((p) => p.chunk_no),
-      played: body.played.map((p) => p.chunk_id),
-    };
-  });
+    });
+  for (const packet of body.inputs)
+    await transaction(async (db) => {
+      await authorize(db, packet);
+      await append(db, sessionId, {
+        event_id: packet.event_id,
+        kind: packet.muted ? "input_muted" : "input_unmuted",
+        epoch: packet.epoch,
+        metadata: {
+          frame_seq: packet.frame_seq,
+          monotonic_ms: packet.monotonic_ms,
+        },
+      });
+    });
+  for (const packet of body.text)
+    await transaction(async (db) => {
+      const s = await authorize(db);
+      requireThat(s.test_mode, "真实模式通过语音输入");
+      await append(db, sessionId, {
+        event_id: packet.event_id,
+        kind: "utterance",
+        speaker: "user",
+        text: packet.text,
+        metadata: {
+          input_turn_id: packet.event_id,
+          revision: 0,
+          recovered: true,
+        },
+      });
+    });
+  return {
+    ...(body.text.length ? { text: body.text.map((p) => p.event_id) } : {}),
+    ...(body.inputs.length
+      ? { inputs: body.inputs.map((p) => p.event_id) }
+      : {}),
+    audio: body.audio.map((p) => p.chunk_no),
+    played: body.played.map((p) => p.chunk_id),
+  };
 }

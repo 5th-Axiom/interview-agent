@@ -94,10 +94,21 @@ test("forged and expired relay tickets are rejected", async () => {
   );
 });
 test("production refuses fixed OTP and development mode", () => {
-  const prev = process.env.NODE_ENV;
-  Object.assign(process.env, { NODE_ENV: "production" });
-  assert.throws(validateEnvironment, /Unsafe/);
-  Object.assign(process.env, { NODE_ENV: prev });
+  const before = {
+    NODE_ENV: process.env.NODE_ENV,
+    APP_ENV: process.env.APP_ENV,
+  };
+  try {
+    Object.assign(process.env, {
+      NODE_ENV: "production",
+      APP_ENV: "production",
+    });
+    assert.throws(validateEnvironment, /Unsafe/);
+  } finally {
+    for (const [key, value] of Object.entries(before))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  }
 });
 test("session lifecycle, isolation, atomic retry redemption and idempotency", async () => {
   await ready;
@@ -149,7 +160,7 @@ test("session lifecycle, isolation, atomic retry redemption and idempotency", as
     1,
   );
   const switched = await transaction((db) =>
-    control(db, actor, first.id, "role", undefined, role),
+    control(db, actor, first.id, "role", first.version, role),
   );
   assert.equal(
     new Date(switched.deadline_at).getTime(),

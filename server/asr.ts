@@ -4,6 +4,31 @@ import {
   speechConfig,
   type SpeechConfig,
 } from "./speech-provider";
+export type AudioFrame = {
+  chunkNo: string;
+  startMs: number;
+  durationMs: number;
+};
+export type TranscriptInfo = {
+  chunkNos: string[];
+  provisional: boolean;
+  providerId: string;
+  inputTurnId: string;
+  revision: number;
+};
+type Part = {
+  text: string;
+  final: boolean;
+  chunks: string[];
+  provider: string;
+};
+type Group = {
+  id: string;
+  turn: string;
+  revision: number;
+  keys: string[];
+  text: string;
+};
 export class LiveASR {
   private current: SpeechConnection | null = null;
   private retiring = new Set<SpeechConnection>();
@@ -11,21 +36,49 @@ export class LiveASR {
   private silence: ReturnType<typeof setTimeout> | null = null;
   private rotation: ReturnType<typeof setInterval> | null = null;
   private keepalive: ReturnType<typeof setInterval> | null = null;
-  private backlog: Buffer[] = [];
+  private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private backlog: { pcm: Buffer; frame?: AudioFrame }[] = [];
   private ready = false;
   private closed = false;
   private speechAt = 0;
   private audioAt = 0;
-  private texts = new Map<string, string>();
+  private committedAt = 0;
+  private parts = new Map<string, Part>();
   private pending = new Set<string>();
-  private committed = new Map<string, { id: string; keys: string[] }>();
+  private committed = new Map<string, Group>();
+  private timeline = new Map<
+    string,
+    { ms: number; frames: (AudioFrame & { from: number; to: number })[] }
+  >();
+  private saving = false;
+  private attempt: {
+    keys: string[];
+    values: Part[];
+    group?: Group;
+    id: string;
+    turn: string;
+    revision: number;
+    text: string;
+  } | null = null;
+  private muted = false;
+  private connecting = false;
   private config: SpeechConfig;
   constructor(
-    private onText: (id: string, text: string, revisionOf?: string) => void,
+    private onText: (
+      id: string,
+      text: string,
+      revisionOf?: string,
+      info?: TranscriptInfo,
+    ) => unknown,
     private onActivity: () => void,
     private onError: () => void,
     endpoint?: string,
     config = speechConfig(),
+    private onTiming: (
+      stage: string,
+      elapsed?: number,
+      detail?: Record<string, unknown>,
+    ) => void = () => {},
   ) {
     this.config = endpoint
       ? { ...config, endpoint, provider: "deepgram" }
@@ -34,16 +87,23 @@ export class LiveASR {
   async open() {
     this.rotation = setInterval(() => this.rotate(), 240000);
     this.keepalive = setInterval(() => {
-      if (this.ready && Date.now() - this.audioAt > 4000)
+      if (!this.ready || Date.now() - this.audioAt < 4000) return;
+      try {
         this.current?.keepalive();
+        if (this.current && this.config.provider === "dashscope")
+          this.timeline.get(this.current.id)!.ms += 200;
+      } catch {
+        this.onError();
+      }
     }, 5000);
     await this.connect();
   }
   rotate() {
-    void this.connect().catch(() => this.onError());
+    if (!this.connecting) void this.connect().catch(() => this.onError());
   }
   private async connect() {
     if (this.closed) return;
+    this.connecting = true;
     const old = this.current;
     if (old) {
       this.retiring.add(old);
@@ -51,34 +111,41 @@ export class LiveASR {
     }
     this.ready = false;
     const next = new SpeechConnection(this.config, {
-      result: ({ key: part, text, final }) => {
+      result: (r) => {
         if (this.closed || (this.current !== next && !this.retiring.has(next)))
           return;
-        const key = `${next.id}:${part}`;
-        if (final && this.texts.get(key) === text) return;
-        this.activity();
-        if (!final) return;
-        this.texts.set(key, text);
-        const group = this.committed.get(key);
-        if (group) {
-          const id = randomUUID();
-          for (const k of group.keys)
-            this.committed.set(k, { id, keys: group.keys });
-          this.onText(
-            id,
-            group.keys.map((k) => this.texts.get(k)).join(" "),
-            group.id,
-          );
-        } else {
-          this.pending.add(key);
-          this.schedule();
-        }
+        const key = next.id + ":" + r.key,
+          previous = this.parts.get(key);
+        if (previous?.text === r.text && previous.final === r.final) return;
+        // Late finals revise their own input; a retired connection never signals new activity.
+        if (!r.final && this.current === next && !this.committed.has(key))
+          this.activity();
+        else if (!previous && this.speechAt <= this.committedAt)
+          this.speechAt = Date.now();
+        const timeline = this.timeline.get(next.id);
+        const chunks =
+          Number.isFinite(r.startMs) && Number.isFinite(r.endMs)
+            ? (timeline?.frames ?? [])
+                .filter((f) => f.to > r.startMs! && f.from < r.endMs!)
+                .map((f) => f.chunkNo)
+            : (previous?.chunks ?? []);
+        this.onTiming(r.final ? "asr_final" : "asr_interim", undefined, {
+          request_id: next.id,
+        });
+        this.parts.set(key, {
+          text: r.text,
+          final: r.final,
+          chunks,
+          provider: next.id,
+        });
+        this.pending.add(key);
+        this.schedule(this.committed.has(key) ? 0 : undefined);
       },
       activity: () => {
-        if (!this.closed) this.activity();
+        if (!this.closed && this.current === next) this.activity();
       },
       error: () => {
-        if (!this.closed) this.onError();
+        if (!this.closed && this.current === next) this.onError();
       },
       finished: () => {
         if (this.retiring.delete(next) || this.closed) return;
@@ -89,52 +156,154 @@ export class LiveASR {
       },
     });
     this.current = next;
-    await next.ready;
-    if (this.closed || this.current !== next) {
-      next.close();
-      return;
-    }
-    this.ready = true;
-    for (const frame of this.backlog) next.send(frame);
-    this.backlog = [];
-    if (old) {
-      const timer = setTimeout(() => {
-        this.timers.delete(timer);
-        if (this.retiring.delete(old)) {
-          old.close();
-          if (!this.closed) this.onError();
-        }
-      }, 5000);
-      this.timers.add(timer);
+    this.timeline.set(next.id, { ms: 0, frames: [] });
+    try {
+      await next.ready;
+      if (this.closed || this.current !== next) {
+        next.close();
+        return;
+      }
+      this.ready = true;
+      for (const item of this.backlog) this.transmit(item.pcm, item.frame);
+      this.backlog = [];
+      if (old) {
+        const timer = setTimeout(() => {
+          this.timers.delete(timer);
+          if (this.retiring.delete(old)) old.close();
+        }, 5000);
+        this.timers.add(timer);
+      }
+    } finally {
+      this.connecting = false;
     }
   }
   private activity() {
     this.speechAt = Date.now();
-    if (this.silence) clearTimeout(this.silence);
     this.onActivity();
+    if (this.pending.size) this.schedule();
   }
   touch() {
     this.speechAt = Date.now();
     if (this.pending.size) this.schedule();
   }
-  private schedule() {
+  private schedule(delay?: number) {
     if (this.silence) clearTimeout(this.silence);
-    this.silence = setTimeout(() => {
-      if (Date.now() - this.speechAt < 1200) return this.schedule();
-      const keys = [...this.pending];
-      this.pending.clear();
-      if (!keys.length || this.closed) return;
-      const id = randomUUID();
-      for (const key of keys) this.committed.set(key, { id, keys });
-      this.onText(id, keys.map((k) => this.texts.get(k)).join(" "));
-    }, 1300);
+    this.silence = setTimeout(
+      () => void this.commit(),
+      delay ??
+        Math.max(
+          0,
+          this.speechAt + (this.config.silenceMs ?? 900) - Date.now(),
+        ),
+    );
   }
-  send(pcm: Buffer) {
-    if (this.closed) return;
+  private async commit() {
+    if (this.closed || this.saving || (!this.pending.size && !this.attempt))
+      return;
+    this.saving = true;
+    // Revisions stay within the original logical input turn, including after rotation.
+    if (!this.attempt) {
+      const first = [...this.pending][0],
+        group = this.committed.get(first);
+      const keys =
+        group?.keys ?? [...this.pending].filter((k) => !this.committed.has(k));
+      const values = keys.map((k) => this.parts.get(k)!);
+      const id = randomUUID();
+      this.attempt = {
+        keys,
+        values,
+        group,
+        id,
+        turn: group?.turn ?? id,
+        revision: (group?.revision ?? -1) + 1,
+        text: values.map((p) => p.text).join(" "),
+      };
+    }
+    // Keep the exact command identity/content across an unknown database outcome.
+    const { keys, values, group, id, turn, revision, text } = this.attempt;
+    try {
+      if (text !== group?.text)
+        await this.onText(id, text, group?.id, {
+          chunkNos: [...new Set(values.flatMap((p) => p.chunks))],
+          provisional: values.some((p) => !p.final),
+          providerId: values[0].provider,
+          inputTurnId: turn,
+          revision,
+        });
+      if (!group) this.committedAt = Date.now();
+      const next =
+        text === group?.text ? group! : { id, turn, revision, keys, text };
+      for (let i = 0; i < keys.length; i++) {
+        this.committed.set(keys[i], next);
+        if (this.parts.get(keys[i]) === values[i]) this.pending.delete(keys[i]);
+      }
+      this.attempt = null;
+    } catch {
+      this.onError();
+    } finally {
+      this.saving = false;
+      if (this.pending.size && !this.closed) this.schedule(250);
+    }
+  }
+  mute(value: boolean) {
+    this.muted = value;
+    if (this.flushTimer) clearInterval(this.flushTimer);
+    if (!value) return;
+    try {
+      this.current?.finalize();
+    } catch {
+      this.onError();
+    }
+    // DashScope has no Finalize control: send bounded, real-time paced synthetic silence.
+    // These samples have no chunk IDs and never become candidate recording or coverage.
+    if (this.config.provider === "dashscope") {
+      let remaining = Math.ceil((this.config.silenceMs ?? 900) / 100) + 2;
+      this.flushTimer = setInterval(() => {
+        if (!this.muted || this.closed || remaining-- <= 0) {
+          clearInterval(this.flushTimer!);
+          this.flushTimer = null;
+          return;
+        }
+        try {
+          if (this.ready) this.transmit(Buffer.alloc(3200));
+        } catch {
+          this.onError();
+        }
+      }, 100);
+    }
+    if (this.pending.size) this.schedule();
+  }
+  private transmit(pcm: Buffer, frame?: AudioFrame) {
+    const current = this.current!;
+    current.send(pcm);
+    if (
+      frame &&
+      Math.floor(frame.startMs / 1000) !==
+        Math.floor((frame.startMs - frame.durationMs) / 1000)
+    )
+      this.onTiming("asr_send", undefined, {
+        request_id: current.id,
+        duration_ms: frame.durationMs,
+      });
+    const timeline = this.timeline.get(current.id)!;
+    if (frame)
+      timeline.frames.push({
+        ...frame,
+        from: timeline.ms,
+        to: timeline.ms + pcm.length / 32,
+      });
+    timeline.ms += pcm.length / 32;
+  }
+  send(pcm: Buffer, frame?: AudioFrame) {
+    if (this.closed || this.muted) return;
     this.audioAt = Date.now();
     try {
-      if (this.ready) this.current?.send(pcm);
-      else if (this.backlog.length < 15) this.backlog.push(pcm);
+      if (this.ready) this.transmit(pcm, frame);
+      else if (
+        this.backlog.reduce((n, f) => n + f.pcm.length, 0) + pcm.length <=
+        96000
+      )
+        this.backlog.push({ pcm, frame });
       else this.onError();
     } catch {
       this.onError();
@@ -145,6 +314,7 @@ export class LiveASR {
     if (this.silence) clearTimeout(this.silence);
     if (this.rotation) clearInterval(this.rotation);
     if (this.keepalive) clearInterval(this.keepalive);
+    if (this.flushTimer) clearInterval(this.flushTimer);
     this.current?.close();
     for (const socket of this.retiring) socket.close();
     for (const timer of this.timers) clearTimeout(timer);

@@ -1,3 +1,4 @@
+import { freezeRuntime } from "./runtime-profile";
 import { randomUUID } from "node:crypto";
 import { DB, pool, transaction, requireThat } from "./db";
 import { testMode } from "./config";
@@ -163,6 +164,7 @@ export async function endSession(db: DB, id: string, reason: string) {
   return row;
 }
 export async function expire(db: DB, s: any) {
+  requireThat(s, "会话不存在", 404);
   if (
     s.status !== "ended" &&
     s.deadline_at &&
@@ -196,7 +198,7 @@ export async function bootstrap(a: Actor, entry: string) {
       ).rowCount;
     return {
       entry: e,
-      session: s ?? null,
+      session: s ? publicSession(s) : null,
       eligible,
       roles: (
         await db.query(
@@ -240,10 +242,10 @@ export async function start(db: DB, a: Actor, entry: string, roleId: string) {
     "INSERT INTO sessions(id,user_id,entry_id,status,started_at,deadline_at) VALUES($1,$2,$3,'recovery',now(),now()+interval '1 hour')",
     [id, a.user_id, entry],
   );
-  await db.query("UPDATE sessions SET test_mode=$2 WHERE id=$1", [
-    id,
-    testMode,
-  ]);
+  await db.query(
+    "UPDATE sessions SET test_mode=$2,runtime_config=$3 WHERE id=$1",
+    [id, testMode, JSON.stringify(freezeRuntime())],
+  );
   if (grant)
     await db.query("UPDATE retry_requests SET used_by=$2 WHERE id=$1", [
       grant.id,
@@ -253,6 +255,10 @@ export async function start(db: DB, a: Actor, entry: string, roleId: string) {
 }
 export async function selectRole(db: DB, id: string, version: string) {
   await stopActivity(db, id, "role");
+  await db.query(
+    "UPDATE voice_connections SET retired_at=COALESCE(retired_at,now()) WHERE session_id=$1 AND retired_at IS NULL",
+    [id],
+  );
   const segment = randomUUID();
   const s = (await db.query("SELECT seq FROM sessions WHERE id=$1", [id]))
     .rows[0];
@@ -277,6 +283,7 @@ export async function control(
   action: string,
   version?: number,
   roleId?: string,
+  expectedEpoch?: number,
 ) {
   let s = await access(db, a, id, true);
   s = await expire(db, s);
@@ -287,7 +294,8 @@ export async function control(
     403,
   );
   requireThat(
-    version === undefined || version === s.version,
+    version === s.version &&
+      (expectedEpoch === undefined || expectedEpoch === s.epoch),
     "会话状态已变化，请重试",
     409,
   );
@@ -305,9 +313,13 @@ export async function control(
   requireThat(["pause", "resume", "choose"].includes(action), "无效命令");
   await stopActivity(db, id, action);
   await append(db, id, { kind: action });
+  await db.query(
+    "UPDATE voice_connections SET retired_at=COALESCE(retired_at,now()) WHERE session_id=$1 AND epoch=$2",
+    [id, s.epoch],
+  );
   return (
     await db.query(
-      "UPDATE sessions SET status=$2,version=version+1 WHERE id=$1 RETURNING *",
+      "UPDATE sessions SET status=$2,version=version+1,epoch=epoch+1,heartbeat_at=NULL WHERE id=$1 RETURNING *",
       [id, action === "pause" ? "paused" : "recovery"],
     )
   ).rows[0];
@@ -322,7 +334,7 @@ export async function snapshot(a: Actor, id: string) {
       )
     ).rows;
     return {
-      session: s,
+      session: a.org_id ? s : publicSession(s),
       events,
       retries: (
         await db.query(
@@ -335,6 +347,19 @@ export async function snapshot(a: Actor, id: string) {
           .rows[0] ?? null,
       ...(a.org_id
         ? {
+            telemetry: (
+              await db.query(
+                "SELECT id,epoch,stage,elapsed_ms,detail,created_at FROM voice_telemetry WHERE session_id=$1 ORDER BY id DESC LIMIT 500",
+                [id],
+              )
+            ).rows.reverse(),
+            runtime_config: s.runtime_config,
+            responses: (
+              await db.query(
+                "SELECT * FROM response_runs WHERE session_id=$1 ORDER BY created_at",
+                [id],
+              )
+            ).rows,
             assessments: (
               await db.query(
                 "SELECT * FROM assessments WHERE session_id=$1 ORDER BY version DESC",
@@ -358,4 +383,26 @@ export async function snapshot(a: Actor, id: string) {
         : {}),
     };
   });
+}
+
+export function publicSession(s: any) {
+  const keys = [
+    "id",
+    "entry_id",
+    "status",
+    "mode",
+    "current_segment",
+    "started_at",
+    "deadline_at",
+    "ended_at",
+    "end_reason",
+    "active_ms",
+    "active_since",
+    "version",
+    "epoch",
+    "test_mode",
+    "name",
+    "created_at",
+  ];
+  return Object.fromEntries(keys.filter((k) => k in s).map((k) => [k, s[k]]));
 }

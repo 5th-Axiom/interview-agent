@@ -217,7 +217,10 @@ test("streaming TTS joins partial PCM samples across adjacent JSON and SSE objec
       false,
     ))
       parts.push(bytes);
-    assert(parts.every((p) => p.length === 24000));
+    assert.equal(parts[0].length, 7680);
+    assert(
+      parts.slice(1).every((p) => p.length <= 14400 && p.length % 2 === 0),
+    );
     assert.deepEqual(Buffer.concat(parts), expected);
   } finally {
     for (const [key, value] of Object.entries(prior))
@@ -325,5 +328,30 @@ test("formal interviews expose only supported controls and reject a stray select
     );
   } finally {
     await f.close();
+  }
+});
+
+test("SSE accepts optional data whitespace, terminal EOF and ignores bytes after DONE", async () => {
+  for (const suffix of [
+    "\ndata:[DONE]\ndata:invalid",
+    "\ndata:   [DONE]",
+    "",
+  ]) {
+    const f = await fixture((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.end('data:{"choices":[{"delta":{"content":"有效回答。"}}]}' + suffix);
+    });
+    try {
+      const parts = [];
+      for await (const p of streamProvider(
+        [{ role: "user", content: "test" }],
+        AbortSignal.timeout(3000),
+        f.config,
+      ))
+        parts.push(p);
+      assert.deepEqual(parts, [{ type: "text", text: "有效回答。" }]);
+    } finally {
+      await f.close();
+    }
   }
 });

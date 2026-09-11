@@ -2,7 +2,7 @@ import { chromium } from "@playwright/test";
 import fs from "node:fs/promises";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-const base = "http://localhost:3100";
+const base = process.env.TEST_BASE_URL || "http://localhost:3100";
 const source = await fs.readFile(".local/provider-sample.wav");
 const pcm = Buffer.concat([source.subarray(44), Buffer.alloc(24000 * 2 * 4)]);
 const file = Buffer.concat([source.subarray(0, 44), pcm]);
@@ -119,6 +119,22 @@ try {
   assert.equal(detail.assessments[0]?.status, "ready");
   assert.equal(detail.assessments[0]?.result?.testMode, false);
   assert(detail.recording?.object_key);
+  const timingStages = new Set((detail.telemetry ?? []).map((t) => t.stage));
+  for (const stage of [
+    "asr_send",
+    "asr_final",
+    "utterance_committed",
+    "llm_request",
+    "llm_first_delta",
+    "speakable_text",
+    "tts_request",
+    "tts_first_pcm",
+    "first_audio_durable",
+    "first_audio_sent",
+    "play_start",
+    "play_end",
+  ])
+    assert(timingStages.has(stage), `Missing timing stage: ${stage}`);
   await page.goto(base + `/admin/interviews/${sid}`);
   await page.getByRole("button", { name: "加载录音", exact: true }).click();
   await page.locator("audio").first().waitFor();
@@ -135,6 +151,7 @@ try {
     playbackReceipts: detail.events.filter((e) => e.kind === "playback").length,
     assessment: detail.assessments[0].status,
     recording: detail.recording.status,
+    timingStages: [...timingStages],
     errors,
   };
   await fs.writeFile(

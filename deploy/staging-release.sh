@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 umask 077
 
 staging_root=/home/deploy/interview-agent
@@ -63,6 +63,10 @@ compose run --rm --no-deps web node --env-file=.env.local --import tsx --input-t
   -e 'const { validateEnvironment } = await import("./server/config.ts"); validateEnvironment();'
 echo 'Applying migrations and ensuring seed roles / private storage...'
 compose up -d --wait --wait-timeout 90 postgres storage
+# Stop old writers before changing the schema or enabling a new audio storage format.
+# Keep database/object services and their volumes running throughout the upgrade.
+echo 'Stopping application writers before migration...'
+compose stop --timeout 45 web relay worker
 compose run --rm --no-deps web npm run db:migrate
 compose run --rm --no-deps web npm run db:seed
 echo 'Updating Web, Relay and Worker...'

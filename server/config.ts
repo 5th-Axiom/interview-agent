@@ -1,3 +1,4 @@
+import { modelProfile } from "./runtime-profile";
 export const testMode = process.env.DEV_TEST_MODE === "true";
 function productionEnvironment() {
   return (
@@ -34,11 +35,28 @@ export function validateEnvironment() {
     throw new Error("AUTH_SECRET must have 32+ characters");
   if ((process.env.PHONE_HASH_SECRET?.length ?? 0) < 32)
     throw new Error("PHONE_HASH_SECRET must have 32+ characters");
+  for (const purpose of ["interview", "summary", "assessment"] as const) {
+    const profile = modelProfile(purpose);
+    if (profile.contextWindow <= profile.outputReserve + profile.safetyMargin)
+      throw new Error(`Invalid ${purpose} context budget`);
+    if (!testMode) {
+      if (!profile.model)
+        throw new Error(`Missing ${purpose.toUpperCase()}_MODEL or LLM_MODEL`);
+      if (!profile.base)
+        throw new Error(
+          `Missing ${purpose.toUpperCase()}_BASE_URL or LLM_BASE_URL`,
+        );
+      if (!(
+        process.env[`${purpose.toUpperCase()}_API_KEY`] ||
+        process.env.LLM_API_KEY
+      ))
+        throw new Error(
+          `Missing ${purpose.toUpperCase()}_API_KEY or LLM_API_KEY`,
+        );
+    }
+  }
   if (!testMode) {
     const required = [
-      "LLM_API_KEY",
-      "LLM_BASE_URL",
-      "LLM_MODEL",
       "TTS_VOICE",
       process.env.ASR_PROVIDER === "dashscope"
         ? "DASHSCOPE_API_KEY"
@@ -53,13 +71,7 @@ export function validateEnvironment() {
   if (productionEnvironment()) {
     if (testMode || process.env.ALLOW_TEST_OTP === "true")
       throw new Error("Unsafe test configuration in production");
-    for (const key of [
-      "LLM_API_KEY",
-      "LLM_MODEL",
-      "SMS_URL",
-      "SMS_TOKEN",
-      "ADMIN_PASSWORD_HASH",
-    ])
+    for (const key of ["SMS_URL", "SMS_TOKEN", "ADMIN_PASSWORD_HASH"])
       if (!process.env[key]) throw new Error(`Missing production ${key}`);
   }
   if (productionEnvironment() || process.env.APP_ENV === "staging") {

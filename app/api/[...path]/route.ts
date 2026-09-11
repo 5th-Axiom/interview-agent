@@ -1,3 +1,8 @@
+import {
+  freezeRuntime,
+  INTERVIEW_PROMPT_VERSION,
+} from "@/server/runtime-profile";
+import { rateLimit, clientIdentity } from "@/server/rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -21,6 +26,7 @@ import {
   start,
   control,
   snapshot,
+  publicSession,
   enqueue,
   selectRole,
   append,
@@ -36,7 +42,7 @@ import {
   id,
 } from "@/shared/contracts";
 export const runtime = "nodejs";
-const limits = new Map<string, { at: number; n: number }>();
+
 async function handler(req: NextRequest) {
   try {
     validateEnvironment();
@@ -84,12 +90,7 @@ async function handler(req: NextRequest) {
         accessGate: accessEnabled(),
       });
     if (path[0] === "auth" && !read) {
-      const ip = req.headers.get("x-forwarded-for")?.split(",")[0] ?? "local";
-      const l = limits.get(ip);
-      if (l && Date.now() - l.at < 60000) {
-        requireThat(l.n++ < 20, "请求频繁，请稍后再试", 429);
-      } else limits.set(ip, { at: Date.now(), n: 1 });
-      if (limits.size > 2000) limits.clear();
+      await rateLimit("auth", clientIdentity(req.headers), 20);
       if (path[1] === "code") {
         const b = z
           .object({ phone: z.string().trim().min(1).max(64) })
@@ -224,9 +225,17 @@ async function handler(req: NextRequest) {
     }
     if (path[0] === "sessions" && path[1] && read)
       return NextResponse.json(await snapshot(actor, id.parse(path[1])));
-    if (path[0] === "sessions" && path[2] === "audio-tail")
+    if (
+      path[0] === "sessions" &&
+      ["audio-tail", "audio-sync"].includes(path[2])
+    )
       return NextResponse.json(
-        await saveAudioTail(actor, id.parse(path[1]), body),
+        await saveAudioTail(
+          actor,
+          id.parse(path[1]),
+          body,
+          path[2] === "audio-sync",
+        ),
       );
     const c = commandSchema.parse(body);
     const result = await command(
@@ -267,8 +276,15 @@ async function handler(req: NextRequest) {
           if (path[2] === "publish") {
             const v = randomUUID();
             await db.query(
-              "INSERT INTO role_versions(id,role_id,name,description,prompt) VALUES($1,$2,$3,$4,$5)",
-              [v, rid, r.name, r.description, r.prompt],
+              "INSERT INTO role_versions(id,role_id,name,description,prompt,platform_prompt_version) VALUES($1,$2,$3,$4,$5,$6)",
+              [
+                v,
+                rid,
+                r.name,
+                r.description,
+                r.prompt,
+                INTERVIEW_PROMPT_VERSION,
+              ],
             );
             await db.query(
               "UPDATE roles SET status='published',published_version=$2 WHERE id=$1",
@@ -339,7 +355,7 @@ async function handler(req: NextRequest) {
                 },
                 {
                   role: "user",
-                  content: JSON.stringify({ roles, utterance: text }),
+                  content: JSON.stringify({ roles, history, utterance: text }),
                 },
               ],
               AbortSignal.timeout(25000),
@@ -406,17 +422,24 @@ async function handler(req: NextRequest) {
           const sid = randomUUID(),
             v = randomUUID();
           await db.query(
-            "INSERT INTO role_versions(id,role_id,name,description,prompt) VALUES($1,$2,$3,$4,$5)",
-            [v, roleId, r.name, r.description, r.prompt],
+            "INSERT INTO role_versions(id,role_id,name,description,prompt,platform_prompt_version) VALUES($1,$2,$3,$4,$5,$6)",
+            [
+              v,
+              roleId,
+              r.name,
+              r.description,
+              r.prompt,
+              INTERVIEW_PROMPT_VERSION,
+            ],
           );
           await db.query(
             "INSERT INTO sessions(id,user_id,entry_id,mode,status,started_at,deadline_at) VALUES($1,$2,$3,'preview','recovery',now(),now()+interval '1 hour')",
             [sid, user.id, entry.id],
           );
-          await db.query("UPDATE sessions SET test_mode=$2 WHERE id=$1", [
-            sid,
-            testMode,
-          ]);
+          await db.query(
+            "UPDATE sessions SET test_mode=$2,runtime_config=$3 WHERE id=$1",
+            [sid, testMode, JSON.stringify(freezeRuntime())],
+          );
           return selectRole(db, sid, v);
         }
         if (path[0] === "sessions" && path[1] === "start") {
@@ -446,6 +469,9 @@ async function handler(req: NextRequest) {
               z.string().parse(body.action),
               c.expected_version,
               body.role_id,
+              body.expected_epoch === undefined
+                ? undefined
+                : z.number().int().parse(body.expected_epoch),
             );
           if (op === "ticket") {
             requireThat(s.status !== "ended", "面试已结束", 409);
@@ -470,14 +496,24 @@ async function handler(req: NextRequest) {
               403,
             );
             const f = feedbackSchema.parse(body);
+            const audioIds = f.skipped ? [] : f.audio_ids;
+            const owned = await db.query(
+              "SELECT id FROM chunks WHERE session_id=$1 AND track='feedback' AND id=ANY($2::uuid[])",
+              [sid, audioIds],
+            );
+            requireThat(
+              owned.rowCount === audioIds.length,
+              "反馈录音不属于本次面试",
+            );
             await db.query(
-              "INSERT INTO feedback(session_id,rating,tags,text,skipped) VALUES($1,$2,$3,$4,$5) ON CONFLICT(session_id) DO NOTHING",
+              "INSERT INTO feedback(session_id,rating,tags,text,skipped,audio_ids) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(session_id) DO NOTHING",
               [
                 sid,
                 f.skipped ? null : (f.rating ?? null),
                 JSON.stringify(f.skipped ? [] : f.tags),
                 f.skipped ? "" : f.text,
                 f.skipped,
+                audioIds,
               ],
             );
             return { ok: true };
@@ -511,6 +547,7 @@ async function handler(req: NextRequest) {
             return {
               ok: true,
               testMode: s.test_mode,
+              chunk_id: c.request_id,
               text: s.test_mode
                 ? ""
                 : await transcribeWav(wav(pcm), AbortSignal.timeout(15000)),
@@ -660,7 +697,7 @@ async function handler(req: NextRequest) {
           if (op === "feedback-recordings") {
             const chunks = (
               await db.query(
-                "SELECT * FROM chunks WHERE session_id=$1 AND track='feedback'",
+                "SELECT c.* FROM chunks c JOIN feedback f ON f.session_id=c.session_id AND c.id=ANY(f.audio_ids) WHERE c.session_id=$1 AND c.track='feedback' AND NOT f.skipped",
                 [sid],
               )
             ).rows;
@@ -677,7 +714,13 @@ async function handler(req: NextRequest) {
         throw new ApiError(404, "接口不存在");
       },
     );
-    return NextResponse.json(result);
+    return NextResponse.json(
+      !actor.org_id &&
+        path[0] === "sessions" &&
+        ["start", "control"].some((op) => path.includes(op))
+        ? publicSession(result)
+        : result,
+    );
   } catch (e) {
     if (e instanceof z.ZodError)
       return NextResponse.json(

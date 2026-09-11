@@ -1,0 +1,734 @@
+{
+  "baseline": "68dfe808c46a1142af0a2a8df5a8cfaa79dfd142",
+  "items": [
+    {
+      "id": "CR-F01",
+      "title": "移动端操作区 safe-area 偏移",
+      "status": "已修复",
+      "resolution": "移除 H5 操作区相对定位的重复 safe-area 偏移，保留容器安全区。",
+      "validation": [
+        "app/globals.css",
+        "PC/H5 浏览器无横向溢出"
+      ]
+    },
+    {
+      "id": "CR-F02",
+      "title": "认证限流表超限会清空所有有效计数",
+      "status": "已修复",
+      "resolution": "按范围和身份摘要存 PostgreSQL 计数，过期行单独清理，不再清空全部计数。",
+      "validation": [
+        "server/rate-limit.ts",
+        "tests/remediation.test.ts：2001 个其他身份不能重置已限流身份"
+      ]
+    },
+    {
+      "id": "CR-F03",
+      "title": "测试登录限流容量满时误拦已有调用方",
+      "status": "已修复",
+      "resolution": "移除内存表容量导致的全局拒绝，复用持久化限流。",
+      "validation": [
+        "server/rate-limit.ts",
+        "tests/remediation.test.ts"
+      ]
+    },
+    {
+      "id": "CR-F04",
+      "title": "验证文档测试数量不一致",
+      "status": "不适用",
+      "resolution": "26 与 28 对应不同日期/部署阶段，保留历史事实；本轮验收单独记录。",
+      "validation": [
+        "docs/verification.md"
+      ]
+    },
+    {
+      "id": "CR-F05",
+      "title": "测试入口缺少防嵌入响应头",
+      "status": "已修复",
+      "resolution": "测试代理增加 DENY 和 CSP frame-ancestors，同时限制 base-uri/object-src。",
+      "validation": [
+        "deploy/nginx.staging-proxy.conf",
+        "配置检查，远端尚未发布"
+      ]
+    },
+    {
+      "id": "CR-F06",
+      "title": "测试入口遇到网关 HTML 错误时泄露解析错误到 UI",
+      "status": "已修复",
+      "resolution": "共享响应解析保留 HTTP 状态，HTML 网关错误使用可重试的中文提示。",
+      "validation": [
+        "shared/http.ts",
+        "tests/remediation.test.ts"
+      ]
+    },
+    {
+      "id": "CR-F07",
+      "title": "继续面试标签使用重复条件",
+      "status": "已整理",
+      "resolution": "重复条件属于可读性问题；继续按钮统一文案，保留显式恢复交互。",
+      "validation": [
+        "components/business/voice-panel.tsx",
+        "PC/H5 暂停与恢复检查"
+      ]
+    },
+    {
+      "id": "CR-F08",
+      "title": "Relay 测试的管理员登录未传 admin 标志",
+      "status": "不适用",
+      "resolution": "管理员登录接口在业务 actor 分派前处理，不需要 admin 请求标志；未添加无意义标志。",
+      "validation": [
+        "app/api/[...path]/route.ts",
+        "scripts/relay-check.mjs 登录通过"
+      ]
+    },
+    {
+      "id": "CR-F09",
+      "title": "setup 不会收紧已存在环境文件的权限",
+      "status": "已修复",
+      "resolution": "setup 对已有 .env.local 同样收紧为 0600。",
+      "validation": [
+        "scripts/setup.mjs",
+        "tests/operational-hardening.test.ts 实际文件权限检查"
+      ]
+    },
+    {
+      "id": "CR-F10",
+      "title": "H5 验收脚本收集到页面错误仍报 PASS",
+      "status": "已修复",
+      "resolution": "页面异常列表必须为空才能通过。",
+      "validation": [
+        "scripts/mobile-check.mjs",
+        "Chrome H5 通过"
+      ]
+    },
+    {
+      "id": "CR-F11",
+      "title": "面试时长需要兜底非数值",
+      "status": "已修复",
+      "resolution": "计时显示对非有限数兜底为 0。",
+      "validation": [
+        "components/business/voice-panel.tsx"
+      ]
+    },
+    {
+      "id": "CR-F12",
+      "title": "验收脚本对 event.text 使用 includes 缺少空值保护",
+      "status": "不适用",
+      "resolution": "events.text 数据库 NOT NULL，当前验收读取该事件契约，不存在所述 nullable 路径。",
+      "validation": [
+        "migrations/001_initial.sql",
+        "scripts/journey-check.mjs"
+      ]
+    },
+    {
+      "id": "CR-F13",
+      "title": "PC 验收脚本收集到页面错误仍报 PASS",
+      "status": "已修复",
+      "resolution": "PC 页面异常不再只收集，必须断言为空。",
+      "validation": [
+        "scripts/browser-check.mjs",
+        "Chrome PC 通过"
+      ]
+    },
+    {
+      "id": "CR-F14",
+      "title": "保存复核意见按钮的禁用断言被丢弃",
+      "status": "已修复",
+      "resolution": "实际断言空复核意见的保存按钮禁用。",
+      "validation": [
+        "scripts/browser-check.mjs"
+      ]
+    },
+    {
+      "id": "CR-F15",
+      "title": "测试环境变量未在失败时恢复",
+      "status": "已修复",
+      "resolution": "修改环境变量的测试使用 finally 还原。",
+      "validation": [
+        "tests/core.test.ts",
+        "npm test"
+      ]
+    },
+    {
+      "id": "CR-F16",
+      "title": "候选人页面未防御 sessionStorage 不可用",
+      "status": "已修复",
+      "resolution": "浏览器存储失败不阻止候选人进入恢复界面。",
+      "validation": [
+        "features/interview/candidate-page.tsx"
+      ]
+    },
+    {
+      "id": "CR-F17",
+      "title": "共享 API 遇到非 JSON 响应会丢失 HTTP 状态并误重试",
+      "status": "已修复",
+      "resolution": "非 JSON 响应保留状态码，按状态决定重试，避免把所有错误当网络异常。",
+      "validation": [
+        "shared/http.ts",
+        "tests/remediation.test.ts"
+      ]
+    },
+    {
+      "id": "CR-F18",
+      "title": "输入手机号时应重置分页",
+      "status": "不适用",
+      "resolution": "手机号为草稿筛选，提交筛选时已经重置页码；逐键重置会改变既有交互。",
+      "validation": [
+        "features/admin/records-page.tsx",
+        "scripts/edge-check.mjs"
+      ]
+    },
+    {
+      "id": "CR-F19",
+      "title": "部署测试依赖工作目录",
+      "status": "已修复",
+      "resolution": "部署验收用模块位置解析项目根路径。",
+      "validation": [
+        "tests/staging-command.test.ts",
+        "npm test"
+      ]
+    },
+    {
+      "id": "CR-F20",
+      "title": "语音选岗播放失败后麦克风未恢复",
+      "status": "已修复",
+      "resolution": "选岗确认播放失败也在 finally 恢复采音并释放 AudioContext。",
+      "validation": [
+        "features/interview/use-role-selection.ts",
+        "scripts/mobile-check.mjs"
+      ]
+    },
+    {
+      "id": "CR-F21",
+      "title": "beforeunload 增加旧浏览器兼容写法",
+      "status": "已修复",
+      "resolution": "beforeunload 同时设置 returnValue，未确认语音有离开提醒。",
+      "validation": [
+        "features/admin/use-unsaved-changes.ts",
+        "features/interview/use-voice-session.ts"
+      ]
+    },
+    {
+      "id": "CR-F22",
+      "title": "短信调用持有数据库事务",
+      "status": "已修复",
+      "resolution": "短事务预留 OTP 发送令牌，HTTP 短信发送在事务外，按令牌确认成功/失败。",
+      "validation": [
+        "tests/sms.test.ts：12 个慢发送期间数据库仍可用，失败可立即重试"
+      ]
+    },
+    {
+      "id": "CR-F23",
+      "title": "候选人会话响应包含招聘方评估 Prompt",
+      "status": "已修复",
+      "resolution": "候选人响应改为白名单 DTO，隐藏招聘评估要求。",
+      "validation": [
+        "server/business.ts",
+        "tests/remediation.test.ts 同时验证 bootstrap/snapshot"
+      ]
+    },
+    {
+      "id": "CR-F24",
+      "title": "ASR 保活异常逃逸并终止 Relay",
+      "status": "已修复",
+      "resolution": "ASR keepalive 异常进入恢复处理，不能逃出 interval 终止 Relay。",
+      "validation": [
+        "tests/asr.test.ts 注入发送异常"
+      ]
+    },
+    {
+      "id": "CR-F25",
+      "title": "助手音频落库零行时仍可能发送",
+      "status": "已修复",
+      "resolution": "生成音频先经有效代次/状态检查并写入 outbox，未落库行不发送。",
+      "validation": [
+        "server/audio-store.ts",
+        "tests/remediation.test.ts 错误 epoch 不产生可发送分片"
+      ]
+    },
+    {
+      "id": "CR-F26",
+      "title": "录音尾片 INSERT 缺少 ON CONFLICT",
+      "status": "已处理",
+      "resolution": "原路径已有会话锁和去重；统一保存函数与锁顺序，内容寻址防覆盖，并验证重试内容/采集时间/代次。未机械添加掩盖冲突的 ON CONFLICT。",
+      "validation": [
+        "server/audio-store.ts",
+        "scripts/relay-check.mjs",
+        "tests/reliability.test.ts"
+      ]
+    },
+    {
+      "id": "CR-F27",
+      "title": "录音整理内存和参数展开容量风险",
+      "status": "已修复",
+      "resolution": "录音用私有临时文件和有界分片窗口写入/上传，去掉全量缓冲和展开求最大值。",
+      "validation": [
+        "server/jobs.ts",
+        "server/storage.ts",
+        "Relay 私有录音 Range 验收"
+      ]
+    },
+    {
+      "id": "CR-F28",
+      "title": "ASR 活动事件取消最终文本提交计时器",
+      "status": "已修复",
+      "resolution": "activity 重排统一静音截止时间，pending final 不再永久悬挂。",
+      "validation": [
+        "tests/asr.test.ts：final 后 activity 且无新 final 仍提交"
+      ]
+    },
+    {
+      "id": "CR-F29",
+      "title": "SSE 结束标记对空格格式过于严格",
+      "status": "已修复",
+      "resolution": "SSE 支持 data 冒号后可选空白、EOF 和 DONE，DONE 后不继续解析。",
+      "validation": [
+        "tests/provider.test.ts 新增变体用例"
+      ]
+    },
+    {
+      "id": "CR-F30",
+      "title": "密码哈希脚本剥掉有效首尾空格",
+      "status": "已修复",
+      "resolution": "只去掉管道末尾换行，保留密码本身的首尾空格。",
+      "validation": [
+        "scripts/hash-admin.mjs",
+        "tests/operational-hardening.test.ts 实际 scrypt 校验"
+      ]
+    },
+    {
+      "id": "C01",
+      "title": "未确认音频满载后，继续面试会立即再次断开",
+      "status": "已修复",
+      "resolution": "8 秒积压时暂停采音；继续前先 HTTP 补传并清空旧队列，再连接和采音。",
+      "validation": [
+        "scripts/voice-recovery-browser.mjs：扣住回执直至满载后恢复通过"
+      ]
+    },
+    {
+      "id": "C02",
+      "title": "重新选岗会销毁尚未确认的保存队列",
+      "status": "已修复",
+      "resolution": "按会话保留未确认队列，换岗前同步，组件卸载不销毁待确认数据。",
+      "validation": [
+        "features/interview/pending-voice.ts",
+        "scripts/voice-recovery-browser.mjs"
+      ]
+    },
+    {
+      "id": "C03",
+      "title": "旧连接的播放回执在重连后永久停止重试",
+      "status": "已修复",
+      "resolution": "保存源 epoch 与签名播放凭据，经历史连接授权通过 HTTP 跨连接补传。",
+      "validation": [
+        "server/audio-tail.ts",
+        "tests/remediation.test.ts"
+      ]
+    },
+    {
+      "id": "C04",
+      "title": "播放进度和播放事件分开提交，重试无法修复中间失败",
+      "status": "已修复",
+      "resolution": "播放进度和事件在一个事务内提交，单调去重。",
+      "validation": [
+        "tests/remediation.test.ts：事件插入失败回滚进度，重试恰好一次"
+      ]
+    },
+    {
+      "id": "C05",
+      "title": "收尾等待数据库期间被打断，仍会结束面试",
+      "status": "已修复",
+      "resolution": "自然结束取得会话锁后再次检查回复代次和全部播放确认；取消失效不能结束。",
+      "validation": [
+        "tests/relay-runtime.test.ts：锁等待期间取消并确认 Relay 存活"
+      ]
+    },
+    {
+      "id": "C06",
+      "title": "已关闭连接的初始化仍可接管并踢掉新连接",
+      "status": "已修复",
+      "resolution": "初始化取得锁后、提交前检查 WebSocket 是否关闭，已关闭连接不接管。",
+      "validation": [
+        "tests/relay-runtime.test.ts：阻塞初始化后关闭，再连接成功"
+      ]
+    },
+    {
+      "id": "C07",
+      "title": "摘要提交与实时发言保存采用相反锁顺序",
+      "status": "已修复",
+      "resolution": "Worker 与前台统一 sessions → jobs → 业务对象锁顺序。",
+      "validation": [
+        "server/job-lease.ts",
+        "tests/remediation.test.ts 并发争锁"
+      ]
+    },
+    {
+      "id": "C08",
+      "title": "续租语句允许已经过期的执行者复活租约",
+      "status": "已修复",
+      "resolution": "续租必须令牌匹配且租约尚未过期；失租任务中断。",
+      "validation": [
+        "tests/remediation.test.ts",
+        "tests/reliability.test.ts"
+      ]
+    },
+    {
+      "id": "C09",
+      "title": "全局最大转写时间会跳过断线期间的中间录音缺口",
+      "status": "已修复",
+      "resolution": "逐音频片段记录转写覆盖，后段转写不会吞掉中间空洞。",
+      "validation": [
+        "server/jobs.ts",
+        "tests/remediation.test.ts"
+      ]
+    },
+    {
+      "id": "C10",
+      "title": "录音整理将临时存储故障当成永久缺片完成任务",
+      "status": "已修复",
+      "resolution": "只有确定的对象 404 标记缺片，网络/服务故障交给有限重试；partial 可再整理。",
+      "validation": [
+        "server/storage.ts",
+        "server/jobs.ts",
+        "features/admin/record-detail.tsx"
+      ]
+    },
+    {
+      "id": "C11",
+      "title": "保存成功回调会清除保存期间新增的人工编辑",
+      "status": "已修复",
+      "resolution": "保存成功仅清除对应提交版本，保存期间的新输入保留。",
+      "validation": [
+        "scripts/recovery-check.mjs：延迟响应后继续输入，成功及后台刷新均保留"
+      ]
+    },
+    {
+      "id": "C12",
+      "title": "取消后快速重录时，旧麦克风请求可覆盖新录音",
+      "status": "已修复",
+      "resolution": "每次录音与取消推进 generation，迟到 getUserMedia 不覆盖新录音并释放旧流。",
+      "validation": [
+        "features/interview/feedback-page.tsx",
+        "scripts/ui-edge-check.mjs 取消检查",
+        "Chrome 注入 A/B 授权乱序：旧 A 流关闭，B 保持录音，取消 B 后释放"
+      ]
+    },
+    {
+      "id": "C13",
+      "title": "候选人放弃反馈后，录过的语音仍向招聘方提供",
+      "status": "已修复",
+      "resolution": "反馈只关联最终提交的 audio_ids；跳过不会向招聘方提供曾录制但放弃的音频。",
+      "validation": [
+        "app/api/[...path]/route.ts",
+        "features/admin/record-detail.tsx",
+        "HTTP/UI 跳过验收"
+      ]
+    },
+    {
+      "id": "C14",
+      "title": "用户手动重试保存时会丢失原幂等请求编号",
+      "status": "已修复",
+      "resolution": "请求身份按路径和正文摘要保留，未知结果后手动重试复用原 UUID；成功后才开始新命令。",
+      "validation": [
+        "shared/pending-command.ts",
+        "tests/remediation.test.ts"
+      ]
+    },
+    {
+      "id": "C15",
+      "title": "语义选岗没有把已接收的澄清历史传给模型",
+      "status": "已修复",
+      "resolution": "语义选岗实际使用有界澄清历史，测试模式和真实模式保持连续。",
+      "validation": [
+        "app/api/[...path]/route.ts",
+        "features/interview/use-role-selection.ts"
+      ]
+    },
+    {
+      "id": "C16",
+      "title": "进入会话时丢失招聘入口，后续恢复和重面回到 demo",
+      "status": "已修复",
+      "resolution": "会话地址、恢复、反馈和重面使用 entry_id，缺 URL 参数可由服务端会话恢复。",
+      "validation": [
+        "features/interview/candidate-page.tsx",
+        "features/interview/feedback-page.tsx",
+        "browser-check 支持 TEST_ENTRY",
+        "qa-campus 真实接口和 PC 浏览器完整流程通过"
+      ]
+    },
+    {
+      "id": "C17",
+      "title": "登录限流信任未经代理覆盖的 X-Forwarded-For",
+      "status": "已修复",
+      "resolution": "不信任 X-Forwarded-For；仅显式 TRUST_PROXY 时读取由代理覆盖的 X-Real-IP。",
+      "validation": [
+        "server/rate-limit.ts",
+        "deploy/nginx.staging-proxy.conf",
+        "tests/remediation.test.ts"
+      ]
+    },
+    {
+      "id": "C18",
+      "title": "Relay 恢复测试发送了不符合契约的打断事件",
+      "status": "已修复",
+      "resolution": "删除格式不合法的空打断及其错误自动重问预期，加入真实响应编号的生命周期测试。",
+      "validation": [
+        "scripts/relay-check.mjs",
+        "tests/relay-runtime.test.ts"
+      ]
+    },
+    {
+      "id": "C19",
+      "title": "PC 和 H5 浏览器检查遇到页面异常仍报告 PASS",
+      "status": "已修复",
+      "resolution": "同 CR-F10/F13，浏览器异常必须失败。",
+      "validation": [
+        "scripts/browser-check.mjs",
+        "scripts/mobile-check.mjs"
+      ]
+    },
+    {
+      "id": "C20",
+      "title": "测试运行器继承部署 APP_ENV，破坏测试登录和环境断言",
+      "status": "已修复",
+      "resolution": "测试明确设置 APP_ENV=development，在唯一临时 schema 迁移，finally 只清理自己的 schema。",
+      "validation": [
+        "scripts/test.mjs",
+        "npm test"
+      ]
+    },
+    {
+      "id": "C21",
+      "title": "HTTP 控制未绑定版本，迟到旧命令可以改变接管后的会话",
+      "status": "已修复",
+      "resolution": "HTTP 控制绑定版本/epoch；暂停、继续、换岗原子退休旧连接，旧请求不能改变新会话。",
+      "validation": [
+        "server/business.ts",
+        "tests/remediation.test.ts",
+        "scripts/mobile-check.mjs"
+      ]
+    },
+    {
+      "id": "H01",
+      "title": "Worker 失败状态原子提交",
+      "status": "已修复",
+      "resolution": "任务失败与评估等业务状态同事务，避免任务已失败但页面永久 running。",
+      "validation": [
+        "tests/remediation.test.ts 业务更新异常注入"
+      ]
+    },
+    {
+      "id": "H02",
+      "title": "部署脚本 ERR 继承",
+      "status": "已修复",
+      "resolution": "部署脚本 set -Eeuo pipefail，ERR trap 继承到函数。",
+      "validation": [
+        "tests/operational-hardening.test.ts"
+      ]
+    },
+    {
+      "id": "H03",
+      "title": "缺失会话过期检查",
+      "status": "已修复",
+      "resolution": "过期处理先确认会话存在。",
+      "validation": [
+        "server/business.ts"
+      ]
+    },
+    {
+      "id": "P0-A1",
+      "title": "采音、静音边界与连续性",
+      "status": "工程完成",
+      "resolution": "Worklet 20ms 活动检测、80ms 持续确认、200ms PCM、静音 flush/ack 与输入缺口诊断；不把 RMS 视作已验证 VAD。",
+      "validation": [
+        "public/mic-worklet.js",
+        "scripts/mobile-check.mjs",
+        "真人回声验收见 QA-C"
+      ]
+    },
+    {
+      "id": "P0-A2",
+      "title": "统一 ASR 静音与修订",
+      "status": "工程完成",
+      "resolution": "统一 900ms 静音目标，去掉应用端叠加等待；旧 ASR 只修订自身输入，静音 Finalize/有界静音推进。",
+      "validation": [
+        "server/asr.ts",
+        "tests/asr.test.ts",
+        "真实供应商 smoke"
+      ]
+    },
+    {
+      "id": "P0-B1",
+      "title": "轮次与回复生命周期",
+      "status": "工程完成",
+      "resolution": "显式回复生命周期与输入修订，删除 5 秒无输入自动重生成。",
+      "validation": [
+        "server/turn-coordinator.ts",
+        "tests/relay-runtime.test.ts"
+      ]
+    },
+    {
+      "id": "P0-B2",
+      "title": "控制与保存队列分离",
+      "status": "工程完成",
+      "resolution": "控制、ASR 输入和对象保存使用独立有界队列；本地立即停止声音。",
+      "validation": [
+        "server/relay.ts",
+        "tests/remediation.test.ts"
+      ]
+    },
+    {
+      "id": "P0-C1",
+      "title": "实际对话投影",
+      "status": "工程完成",
+      "resolution": "修订替代原逻辑轮次；只把完整确认播放句子当作已听到；保留部分/未知状态。",
+      "validation": [
+        "server/conversation-view.ts",
+        "tests/remediation.test.ts"
+      ]
+    },
+    {
+      "id": "P0-C2",
+      "title": "版本化 Prompt 与口语输出约束",
+      "status": "工程完成，质量待盲评",
+      "resolution": "平台 Prompt 版本化，纠正/澄清/拒绝展开规则和工具通道分离；朗读契约最多一次修复。",
+      "validation": [
+        "server/model.ts",
+        "server/spoken-output.ts",
+        "32 场景协议回放，模型质量见 EVAL"
+      ]
+    },
+    {
+      "id": "P1-A",
+      "title": "音频持久化 outbox 与归档",
+      "status": "工程完成",
+      "resolution": "助手 PCM 事务写 PostgreSQL outbox 再发送，Worker 有界合并归档，回放按对象字节范围读取。",
+      "validation": [
+        "migrations/005_voice_runtime.sql",
+        "server/audio-store.ts",
+        "持久化/录音测试"
+      ]
+    },
+    {
+      "id": "P1-B",
+      "title": "有界 LLM/TTS 流水线",
+      "status": "工程完成，性能待达标",
+      "resolution": "LLM/TTS 双队列上限 2 句/160 字，首包 160ms、后续 300ms，浏览器抖动缓冲 140ms。",
+      "validation": [
+        "server/relay.ts",
+        "server/tts.ts",
+        "tests/provider.test.ts",
+        "真实 TTS 首包 2525ms，不能宣称 1.8s 目标达标"
+      ]
+    },
+    {
+      "id": "P1-C",
+      "title": "时长背压与跨连接补传",
+      "status": "工程完成",
+      "resolution": "服务端待播放时长 2.4 秒、浏览器队列 4 秒、未保存采音 8 秒；按签名凭据补传后再采音。",
+      "validation": [
+        "scripts/voice-recovery-browser.mjs",
+        "tests/remediation.test.ts"
+      ]
+    },
+    {
+      "id": "P2-A",
+      "title": "Token 预算与后台摘要",
+      "status": "工程完成",
+      "resolution": "把 Prompt/工具/输出预留计入保守 Token 预算，65% 提前摘要，来源和版本 CAS，硬上限明确恢复。",
+      "validation": [
+        "server/context-budget.ts",
+        "server/context.ts",
+        "server/jobs.ts",
+        "tests/core.test.ts"
+      ]
+    },
+    {
+      "id": "P2-B",
+      "title": "长发言缓存与 CAS",
+      "status": "工程完成",
+      "resolution": "长回答来源哈希/Prompt/模型签名缓存，后台分段摘要，实时路径不再同步压缩单条发言。",
+      "validation": [
+        "server/context.ts",
+        "server/jobs.ts",
+        "migrations/005_voice_runtime.sql"
+      ]
+    },
+    {
+      "id": "P2-C",
+      "title": "分用途模型与并发",
+      "status": "工程完成",
+      "resolution": "分用途模型/预算/并发配置，实时 8、摘要 1、评估 1；兼容 LLM_*。未擅自选择新模型。",
+      "validation": [
+        "server/runtime-profile.ts",
+        "server/model.ts",
+        ".env.example"
+      ]
+    },
+    {
+      "id": "OBS",
+      "title": "阶段遥测与管理端时间线",
+      "status": "工程完成",
+      "resolution": "保存阶段时序、安全字段、配置快照和请求编号，ping 校准记录偏差/误差；管理详情有时间线。",
+      "validation": [
+        "server/telemetry.ts",
+        "features/admin/record-detail.tsx",
+        "PC 详情检查",
+        "scripts/live-check.mjs：真实供应商浏览器 trace 验证全部关键阶段，零页面错误"
+      ]
+    },
+    {
+      "id": "ROLLOUT",
+      "title": "冻结配置与回滚",
+      "status": "本地实现，待发布",
+      "resolution": "新会话冻结协议/开关/Prompt/实时模型配置，旧会话继续兼容；回滚只关闭新会话功能，保留 outbox Worker。",
+      "validation": [
+        "server/runtime-profile.ts",
+        "migrations/005_voice_runtime.sql",
+        "docs/remediation-report.md",
+        "本地迁移及服务重启完成；远端未发布"
+      ]
+    },
+    {
+      "id": "EVAL",
+      "title": "30 个对话场景及模型对比",
+      "status": "工具完成，待外部验收",
+      "resolution": "32 个合成场景协议检查通过；真实模型对比脚本就绪，尚未指定候选模型，双人评分未完成。",
+      "validation": [
+        "scripts/evaluate-conversations.ts",
+        "tests/fixtures/conversation-cases.json",
+        "禁止把协议通过率当语义质量通过率"
+      ]
+    },
+    {
+      "id": "QA-A",
+      "title": "自动化故障验收",
+      "status": "已验证",
+      "resolution": "事务故障、租约、锁竞争、ASR 乱序、真实 Relay 取消与关闭初始化等自动化验收。",
+      "validation": [
+        "npm test：48/48"
+      ]
+    },
+    {
+      "id": "QA-B",
+      "title": "PC/H5 浏览器验收",
+      "status": "已验证",
+      "resolution": "PC/H5 Chrome 主流程、HTTP 边界、故障恢复、8 秒音频积压恢复、页面无异常/溢出。",
+      "validation": [
+        "browser/mobile/relay/edge/ui-edge/recovery/voice-recovery scripts"
+      ]
+    },
+    {
+      "id": "QA-C",
+      "title": "真实供应商、麦克风及双人盲评",
+      "status": "部分验证，待外部验收",
+      "resolution": "真实供应商 smoke 和浏览器全流程（合成麦克风）通过；100 有效轮次、30 插话、手机真机/人声、双人 >=95% 盲评和性能分位数未完成。",
+      "validation": [
+        "本轮合成输入报告",
+        "不以单次首包或模拟麦克风替代真人验收",
+        "scripts/journey-check.mjs：真实预览/语音/反馈转写/播放录音/评估重生成/重面，零 issues/errors"
+      ]
+    }
+  ],
+  "updated": "2026-09-11",
+  "scope": "全部 51 条审查发现、3 条补充检查及改进方案任务均已逐项给出结论；外部验收未标完成。"
+}

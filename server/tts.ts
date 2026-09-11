@@ -1,3 +1,8 @@
+export type TTSProfile = {
+  ttsProvider?: string;
+  ttsModel?: string;
+  ttsVoice?: string;
+};
 import { randomUUID } from "node:crypto";
 import { testMode } from "./config";
 import { requireThat } from "./db";
@@ -37,12 +42,13 @@ export async function* ttsBytes(
   text: string,
   signal: AbortSignal,
   simulate = testMode,
+  profile?: TTSProfile,
 ): AsyncGenerator<Buffer> {
   if (simulate) {
     yield Buffer.alloc(Math.max(600, Math.min(2200, text.length * 60)) * 48);
     return;
   }
-  const provider = process.env.TTS_PROVIDER || "openai";
+  const provider = profile?.ttsProvider || process.env.TTS_PROVIDER || "openai";
   if (provider === "tokendance") {
     requireThat(process.env.TOKENDANCE_API_KEY, "语音合成未配置", 503);
     const response = await fetch(
@@ -53,14 +59,15 @@ export async function* ttsBytes(
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${process.env.TOKENDANCE_API_KEY}`,
-          "X-Api-Resource-Id": process.env.TTS_RESOURCE_ID || "seed-tts-2.0",
+          "X-Api-Resource-Id":
+            profile?.ttsModel || process.env.TTS_RESOURCE_ID || "seed-tts-2.0",
           "X-Api-Request-Id": randomUUID(),
         },
         body: JSON.stringify({
           user: { uid: "interview-agent" },
           req_params: {
             text,
-            speaker: process.env.TTS_VOICE,
+            speaker: profile?.ttsVoice || process.env.TTS_VOICE,
             audio_params: { format: "pcm", sample_rate: 24000 },
           },
         }),
@@ -96,8 +103,8 @@ export async function* ttsBytes(
       Authorization: `Bearer ${process.env.TTS_API_KEY}`,
     },
     body: JSON.stringify({
-      model: process.env.TTS_MODEL,
-      voice: process.env.TTS_VOICE,
+      model: profile?.ttsModel || process.env.TTS_MODEL,
+      voice: profile?.ttsVoice || process.env.TTS_VOICE,
       input: text,
       response_format: "pcm",
     }),
@@ -113,11 +120,13 @@ export async function* synthesizeStream(
   text: string,
   signal: AbortSignal,
   simulate = testMode,
+  profile?: TTSProfile,
 ) {
   let pending = Buffer.alloc(0),
     total = 0,
     first = true;
-  for await (const bytes of ttsBytes(text, signal, simulate)) {
+  let packetBytes = 7680;
+  for await (const bytes of ttsBytes(text, signal, simulate, profile)) {
     signal.throwIfAborted();
     total += bytes.length;
     requireThat(total <= 2_880_000, "单句语音超过一分钟", 502);
@@ -131,10 +140,11 @@ export async function* synthesizeStream(
         502,
       );
     }
-    // 500ms packets bound playback queue and align every PCM sample, including odd network chunks.
-    while (pending.length >= 24000) {
-      yield pending.subarray(0, 24000);
-      pending = pending.subarray(24000);
+    // First packet 160ms, then 300ms; alignment survives arbitrary network chunks.
+    while (pending.length >= packetBytes) {
+      yield pending.subarray(0, packetBytes);
+      pending = pending.subarray(packetBytes);
+      packetBytes = 14400;
     }
   }
   requireThat(

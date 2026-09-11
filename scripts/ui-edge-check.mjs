@@ -1,3 +1,4 @@
+const testBase = process.env.TEST_BASE_URL || "http://localhost:3100";
 import { chromium } from "@playwright/test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -20,6 +21,16 @@ page.on("pageerror", (e) => errors.push(e.message));
 async function api(path, body, admin = false) {
   return page.evaluate(
     async ({ path, body, admin }) => {
+      if (path.endsWith("/control") && body) {
+        const current = await fetch("/api/" + path.replace(/\/control$/, ""), {
+          headers: { "X-Interview-Client": admin ? "admin" : "candidate" },
+        }).then((r) => r.json());
+        body = {
+          ...body,
+          expected_version: current.session.version,
+          expected_epoch: current.session.epoch,
+        };
+      }
       const r = await fetch("/api/" + path, {
         method: body === undefined ? "GET" : "POST",
         headers: {
@@ -39,7 +50,7 @@ async function api(path, body, admin = false) {
   );
 }
 try {
-  await page.goto("http://localhost:3100/interview/login");
+  await page.goto(`${testBase}/interview/login`);
   const phone = "ui-edge-" + Date.now();
   await api("auth/code", { phone });
   await api("auth/login", { phone, code: "123456" });
@@ -49,9 +60,7 @@ try {
     role_id: boot.roles[0].id,
   });
   await api(`sessions/${session.id}/control`, { action: "end" });
-  await page.goto(
-    `http://localhost:3100/interview/session/${session.id}/feedback`,
-  );
+  await page.goto(`${testBase}/interview/session/${session.id}/feedback`);
   const submit = page.getByRole("button", { name: "提交反馈", exact: true });
   assert(await submit.isDisabled());
   await page.getByLabel("补充说明（选填）").fill("中".repeat(501));
@@ -63,6 +72,42 @@ try {
   await page.getByRole("button", { name: "录制语音说明" }).click();
   await page.getByRole("button", { name: "取消录音", exact: true }).click();
   await page.getByRole("button", { name: "录制语音说明" }).waitFor();
+  await page.evaluate(() => {
+    const original = navigator.mediaDevices.getUserMedia.bind(
+      navigator.mediaDevices,
+    );
+    window.__micRequests = [];
+    window.__micStreams = [];
+    navigator.mediaDevices.getUserMedia = () =>
+      new Promise((resolve) => window.__micRequests.push(resolve));
+    window.__resolveMic = async (index) => {
+      const stream = await original({ audio: true });
+      window.__micStreams[index] = stream;
+      window.__micRequests[index](stream);
+    };
+    window.__restoreMic = () =>
+      (navigator.mediaDevices.getUserMedia = original);
+  });
+  await page.getByRole("button", { name: "录制语音说明" }).click();
+  await page.waitForFunction(() => window.__micRequests.length === 1);
+  await page.getByRole("button", { name: "取消录音", exact: true }).click();
+  await page.getByRole("button", { name: "录制语音说明" }).click();
+  await page.waitForFunction(() => window.__micRequests.length === 2);
+  await page.evaluate(() => window.__resolveMic(1));
+  await page.evaluate(() => window.__resolveMic(0));
+  await page.waitForFunction(() =>
+    window.__micStreams[0].getTracks().every((t) => t.readyState === "ended"),
+  );
+  assert(
+    await page.evaluate(() =>
+      window.__micStreams[1].getTracks().every((t) => t.readyState === "live"),
+    ),
+  );
+  await page.getByRole("button", { name: "取消录音", exact: true }).click();
+  await page.waitForFunction(() =>
+    window.__micStreams[1].getTracks().every((t) => t.readyState === "ended"),
+  );
+  await page.evaluate(() => window.__restoreMic());
   await page.screenshot({
     path: ".local/screenshots/feedback-form-h5.png",
     fullPage: true,
@@ -91,10 +136,13 @@ try {
     .waitFor();
   assert.equal((await api(`sessions/${session.id}`)).feedback.text, "");
   await api("auth/admin", { password: "local-recruiter" }, true);
-  const result = JSON.parse(
-    await fs.readFile(".local/live-result.json", "utf8"),
-  );
-  await page.goto(`http://localhost:3100/admin/interviews/${result.sid}`);
+  const result = { sid: session.id };
+  for (let i = 0; i < 45; i++) {
+    const current = await api(`sessions/${session.id}`, undefined, true);
+    if (current.assessments[0]?.status === "ready") break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  await page.goto(`${testBase}/admin/interviews/${result.sid}`);
   const field = page.getByLabel("本次评估要求");
   await field.waitFor();
   const original = await field.inputValue();
@@ -135,6 +183,7 @@ try {
         "500 char UI limit",
         "stars",
         "cancel microphone",
+        "late microphone A cannot replace recording B; both streams release on cancellation",
         "skip confirmation retains input",
         "skip discards submitted content",
         "assessment cancel",

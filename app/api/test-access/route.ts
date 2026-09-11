@@ -1,3 +1,5 @@
+import { rateLimit, clientIdentity } from "@/server/rate-limit";
+import { ApiError } from "@/server/db";
 import { NextRequest, NextResponse } from "next/server";
 import {
   accessCookie,
@@ -10,7 +12,6 @@ import {
 } from "@/server/test-access";
 
 export const runtime = "nodejs";
-const attempts = new Map<string, { count: number; until: number }>();
 const headers = { "Cache-Control": "no-store, private" };
 export async function GET(req: NextRequest) {
   return NextResponse.json(
@@ -61,18 +62,7 @@ export async function POST(req: NextRequest) {
         response.cookies.set(name, "", { ...options, maxAge: 0 });
       return response;
     }
-    const ip = req.headers.get("x-real-ip") ?? "direct";
-    const now = Date.now();
-    for (const [key, value] of attempts)
-      if (value.until <= now) attempts.delete(key);
-    const attempt = attempts.get(ip) ?? { count: 0, until: now + 60000 };
-    if (attempt.count >= 6 || attempts.size >= 10000)
-      return NextResponse.json(
-        { error: "尝试次数过多，请一分钟后重试" },
-        { status: 429, headers: { ...headers, "Retry-After": "60" } },
-      );
-    attempt.count++;
-    attempts.set(ip, attempt);
+    await rateLimit("access", clientIdentity(req.headers), 6);
     if (
       typeof body.username !== "string" ||
       body.username.length > 128 ||
@@ -84,7 +74,6 @@ export async function POST(req: NextRequest) {
         { error: "用户名或密码不正确，请重试" },
         { status: 401, headers },
       );
-    attempts.delete(ip);
     const response = NextResponse.json(
       { next: safeReturnTo(body.next) },
       { headers },
@@ -94,7 +83,12 @@ export async function POST(req: NextRequest) {
       maxAge: accessTTL,
     });
     return response;
-  } catch {
+  } catch (error) {
+    if (error instanceof ApiError)
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status, headers: { ...headers, "Retry-After": "60" } },
+      );
     return NextResponse.json(
       { error: "登录请求无效，请重试" },
       { status: 400, headers },

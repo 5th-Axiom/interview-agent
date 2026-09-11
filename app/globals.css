@@ -992,7 +992,6 @@ textarea {
   }
   .sticky-actions {
     flex-wrap: wrap;
-    bottom: env(safe-area-inset-bottom);
     padding: 16px 0;
   }
   .sticky-actions > .row {

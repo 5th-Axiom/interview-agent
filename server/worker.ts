@@ -1,14 +1,26 @@
+import { archiveAudio } from "./audio-store";
 import { validateEnvironment } from "./config";
 import { pool, transaction } from "./db";
-import { claimJob } from "./job-lease";
+import { claimJob, renewJob, failJob, completeJob } from "./job-lease";
 import { endSession, stopActivity } from "./business";
 import {
   summarize,
+  summarizeUtterance,
   assess,
   assembleRecording,
   recoverTranscription,
 } from "./jobs";
 validateEnvironment();
+let archiving = false;
+const archiveTimer = setInterval(() => {
+  if (archiving) return;
+  archiving = true;
+  void archiveAudio()
+    .catch(() => console.error("audio_archive_failed"))
+    .finally(() => {
+      archiving = false;
+    });
+}, 250);
 let stopped = false,
   sweeping = false;
 process.on("SIGTERM", () => {
@@ -22,6 +34,9 @@ async function sweep() {
   sweeping = true;
   try {
     await transaction(async (db) => {
+      await db.query(
+        "DELETE FROM rate_limits WHERE expires_at<now()-interval '1 hour'",
+      );
       const due = (
         await db.query(
           "SELECT id FROM sessions WHERE status<>'ended' AND deadline_at<=now() FOR UPDATE SKIP LOCKED LIMIT 50",
@@ -51,59 +66,56 @@ async function sweep() {
 const timer = setInterval(() => void sweep(), 1000);
 await sweep();
 console.log("Worker started");
-while (!stopped) {
-  try {
-    const job = await claimJob();
-    if (job) {
-      const lease = setInterval(
-        () =>
-          void pool
-            .query(
-              "UPDATE jobs SET leased_at=now() WHERE id=$1 AND state='running' AND lease_token=$2",
-              [job.id, job.lease_token],
-            )
-            .catch(() => {}),
-        30000,
-      );
-      try {
-        if (job.kind === "summary") await summarize(job.session_id, job);
-        else if (job.kind === "transcription")
-          await recoverTranscription(job.session_id, job);
-        else if (job.kind === "assessment")
-          await assess(job.session_id, job.version, job);
-        else await assembleRecording(job.session_id, job);
-        await pool.query(
-          "UPDATE jobs SET state='done' WHERE id=$1 AND lease_token=$2",
-          [job.id, job.lease_token],
+async function run(kinds: string[]) {
+  while (!stopped) {
+    try {
+      const job = await claimJob(kinds);
+      if (job) {
+        const abort = new AbortController();
+        job.signal = abort.signal;
+        const lease = setInterval(
+          () =>
+            void renewJob(job)
+              .then((ok) => {
+                if (!ok) abort.abort();
+              })
+              .catch(() => abort.abort()),
+          30000,
         );
-      } catch (e) {
-        const failed = await pool.query(
-          "UPDATE jobs SET state=CASE WHEN attempts>=3 THEN 'failed' ELSE 'pending' END,error=$2,available_at=now()+interval '10 seconds'*attempts WHERE id=$1 AND lease_token=$3 RETURNING state",
-          [job.id, e instanceof Error ? e.name : "unknown", job.lease_token],
-        );
-        if (failed.rows[0]?.state === "failed" && job.kind === "assessment")
-          await pool.query(
-            "UPDATE assessments SET status='failed',error='生成失败，可修改要求后重新生成' WHERE session_id=$1 AND version=$2",
-            [job.session_id, job.version],
+        try {
+          if (job.kind === "summary") await summarize(job.session_id, job);
+          else if (job.kind === "utterance")
+            await summarizeUtterance(job.session_id, job.version, job);
+          else if (job.kind === "transcription")
+            await recoverTranscription(job.session_id, job);
+          else if (job.kind === "assessment")
+            await assess(job.session_id, job.version, job);
+          else await assembleRecording(job.session_id, job);
+          await completeJob(job);
+        } catch (e) {
+          await failJob(job, e).catch(() =>
+            console.error("job_failure_commit_failed", job.kind),
           );
-        if (failed.rows[0]?.state === "failed" && job.kind === "recording")
-          await pool.query(
-            "UPDATE recording_assets SET status='failed' WHERE session_id=$1",
-            [job.session_id],
-          );
-        console.error("job_failed", job.kind);
-      } finally {
-        clearInterval(lease);
+          console.error("job_failed", job.kind);
+        } finally {
+          clearInterval(lease);
+        }
       }
+    } catch (e) {
+      console.error(
+        "worker_cycle_failed",
+        e instanceof Error ? e.name : "unknown",
+      );
     }
-  } catch (e) {
-    console.error(
-      "worker_cycle_failed",
-      e instanceof Error ? e.name : "unknown",
-    );
+    await new Promise((r) => setTimeout(r, 1000));
   }
-  await new Promise((r) => setTimeout(r, 1000));
 }
+await Promise.all([
+  run(["summary", "utterance"]),
+  run(["assessment"]),
+  run(["transcription", "recording"]),
+]);
 clearInterval(timer);
-while (sweeping) await new Promise((r) => setTimeout(r, 20));
+clearInterval(archiveTimer);
+while (sweeping || archiving) await new Promise((r) => setTimeout(r, 20));
 await pool.end();

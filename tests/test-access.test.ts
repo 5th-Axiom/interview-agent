@@ -50,6 +50,8 @@ test("test access protects pages and APIs; cookies expire and password rotation 
         body: JSON.stringify(body),
       }),
     );
+  const oldProxy = process.env.TRUST_PROXY;
+  process.env.TRUST_PROXY = "true";
   try {
     assert(credentialsMatch("tester", password));
     assert(!credentialsMatch("outsider", password));
@@ -124,6 +126,8 @@ test("test access protects pages and APIs; cookies expire and password rotation 
       "/interview?entry=demo",
     );
   } finally {
+    if (oldProxy === undefined) delete process.env.TRUST_PROXY;
+    else process.env.TRUST_PROXY = oldProxy;
     for (const key of keys) {
       if (old[key] === undefined) delete process.env[key];
       else process.env[key] = old[key];

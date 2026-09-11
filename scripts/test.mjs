@@ -1,33 +1,45 @@
 import "dotenv/config";
 import dotenv from "dotenv";
 import pg from "pg";
+import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-dotenv.config({ path: ".env.local", quiet: true });
+import { fileURLToPath } from "node:url";
+const cwd = fileURLToPath(new URL("..", import.meta.url));
+dotenv.config({
+  path: fileURLToPath(new URL("../.env.local", import.meta.url)),
+  quiet: true,
+});
+if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL required");
+const schema = `interview_test_${randomUUID().replaceAll("-", "")}`;
 const url = new URL(process.env.DATABASE_URL);
-url.pathname = "/interview_agent_test";
+url.searchParams.set("options", `-c search_path=${schema},public`);
 const admin = new pg.Client({ connectionString: process.env.DATABASE_URL });
+let code = 1;
 await admin.connect();
-if (
-  !(
-    await admin.query(
-      "SELECT 1 FROM pg_database WHERE datname='interview_agent_test'",
-    )
-  ).rowCount
-)
-  await admin.query("CREATE DATABASE interview_agent_test");
-await admin.end();
-const env = {
-  ...process.env,
-  DATABASE_URL: url.toString(),
-  DEV_TEST_MODE: "true",
-  ALLOW_TEST_OTP: "true",
-  NODE_ENV: "test",
-  ASR_PROVIDER: "deepgram",
-};
-for (const args of [
-  ["tsx", "scripts/migrate.ts"],
-  ["tsx", "--test", "tests/*.test.ts"],
-]) {
-  const r = spawnSync("npx", args, { env, stdio: "inherit" });
-  if (r.status) process.exit(r.status);
+try {
+  await admin.query(`CREATE SCHEMA "${schema}"`);
+  const env = {
+    ...process.env,
+    DATABASE_URL: url.toString(),
+    APP_ENV: "development",
+    NODE_ENV: "test",
+    DEV_TEST_MODE: "true",
+    ALLOW_TEST_OTP: "true",
+    ASR_PROVIDER: "deepgram",
+  };
+  code = 0;
+  for (const args of [
+    ["tsx", "scripts/migrate.ts"],
+    ["tsx", "--test", "tests/*.test.ts"],
+  ]) {
+    const r = spawnSync("npx", args, { cwd, env, stdio: "inherit" });
+    if (r.status !== 0) {
+      code = r.status ?? 1;
+      break;
+    }
+  }
+} finally {
+  await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+  await admin.end();
 }
+process.exitCode = code;

@@ -138,3 +138,91 @@ test("DashScope buffers until task-started and preserves Chinese/English final r
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
+
+test("activity reschedules a pending final, retired activity cannot interrupt, and KeepAlive errors stay contained", async () => {
+  const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+  await new Promise((r) => server.once("listening", r));
+  const sockets: WebSocket[] = [];
+  server.on("connection", (s) => sockets.push(s));
+  const committed: string[] = [];
+  let activity = 0,
+    errors = 0;
+  const asr = new LiveASR(
+    (_id, text) => {
+      committed.push(text);
+    },
+    () => activity++,
+    () => errors++,
+    `ws://127.0.0.1:${(server.address() as any).port}`,
+  );
+  try {
+    await asr.open();
+    while (!sockets.length) await delay(10);
+    sockets[0].send(
+      JSON.stringify({
+        type: "Results",
+        start: 0,
+        is_final: true,
+        channel: { alternatives: [{ transcript: "等待保存的回答" }] },
+      }),
+    );
+    await delay(50);
+    sockets[0].send(JSON.stringify({ type: "SpeechStarted" }));
+    await delay(1000);
+    assert.deepEqual(committed, ["等待保存的回答"]);
+    asr.rotate();
+    while (sockets.length < 2) await delay(10);
+    const before = activity;
+    sockets[0].send(JSON.stringify({ type: "SpeechStarted" }));
+    await delay(30);
+    assert.equal(activity, before);
+    (asr as any).current.keepalive = () => {
+      throw new Error("buffer full");
+    };
+    (asr as any).audioAt = 0;
+    await delay(4100);
+    assert(errors >= 1);
+  } finally {
+    asr.close();
+    for (const s of sockets) s.terminate();
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("ASR save retries retain the exact event identity after an unknown outcome", async () => {
+  const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+  await new Promise((r) => server.once("listening", r));
+  let socket: WebSocket | undefined;
+  server.on("connection", (s) => (socket = s));
+  const attempts: any[] = [];
+  let failures = 0;
+  const asr = new LiveASR(
+    (id, text, revisionOf, info) => {
+      attempts.push({ id, text, revisionOf, info });
+      if (attempts.length === 1) throw new Error("unknown commit outcome");
+    },
+    () => {},
+    () => failures++,
+    `ws://127.0.0.1:${(server.address() as any).port}`,
+  );
+  try {
+    await asr.open();
+    while (!socket) await delay(10);
+    socket.send(
+      JSON.stringify({
+        type: "Results",
+        start: 0,
+        is_final: true,
+        channel: { alternatives: [{ transcript: "只保存一遍" }] },
+      }),
+    );
+    await delay(1350);
+    assert.equal(attempts.length, 2);
+    assert.deepEqual(attempts[0], attempts[1]);
+    assert.equal(failures, 1);
+  } finally {
+    asr.close();
+    socket?.terminate();
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});

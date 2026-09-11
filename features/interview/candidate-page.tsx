@@ -1,18 +1,20 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Mic, ShieldCheck } from "lucide-react";
 import { Shell } from "@/components/business/shell";
 import { VoiceOrb } from "@/components/business/voice-orb";
 import { VoicePanel } from "@/components/business/voice-panel";
 import { Button, Notice } from "@/components/base/ui";
 import { api, mutate, RequestError } from "./api";
+import { hasPendingVoice } from "./pending-voice";
 import { useRoleSelection } from "./use-role-selection";
 import { capture, Capture } from "./audio";
 import { Session, Role } from "@/shared/contracts";
 export function CandidatePage({ id }: { id?: string }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [entry, setEntry] = useState("demo"),
     [stage, setStage] = useState("prepare"),
     [error, setError] = useState(""),
@@ -39,8 +41,12 @@ export function CandidatePage({ id }: { id?: string }) {
   });
   useEffect(() => {
     setEntry(new URLSearchParams(location.search).get("entry") ?? "demo");
-    if (sessionStorage.getItem(`auto:${id}`) === "true") setAuto(true);
-    if (id) sessionStorage.removeItem(`auto:${id}`);
+    try {
+      if (sessionStorage.getItem(`auto:${id}`) === "true") setAuto(true);
+      if (id) sessionStorage.removeItem(`auto:${id}`);
+    } catch {
+      /* Continue is available when browser storage is disabled. */
+    }
     return () => {
       probeEpoch.current++;
       mic.current?.stop();
@@ -58,10 +64,18 @@ export function CandidatePage({ id }: { id?: string }) {
     // retry). Do not redirect using the previous cached bootstrap response.
     if (!id && (boot.isFetching || boot.error)) return;
     const s = id ? detail.data?.session : boot.data?.session;
-    if (s?.status === "ended" && (id || !boot.data?.eligible))
-      router.replace(`/interview/session/${s.id}/feedback`);
+    if (
+      s?.status === "ended" &&
+      (id || !boot.data?.eligible) &&
+      !hasPendingVoice(s.id)
+    )
+      router.replace(
+        `/interview/session/${s.id}/feedback?entry=${encodeURIComponent(s.entry_id ?? entry)}`,
+      );
     else if (!id && s && s.status !== "ended")
-      router.replace(`/interview/session/${s.id}`);
+      router.replace(
+        `/interview/session/${s.id}?entry=${encodeURIComponent(s.entry_id ?? entry)}`,
+      );
   }, [boot.data, boot.isFetching, boot.error, detail.data, id, router]);
   async function testMic() {
     const generation = ++probeEpoch.current;
@@ -109,6 +123,9 @@ export function CandidatePage({ id }: { id?: string }) {
     }
   }
   const s = detail.data?.session as Session | undefined;
+  useEffect(() => {
+    if (s?.entry_id) setEntry(s.entry_id);
+  }, [s?.entry_id]);
   async function choose(role: Role, selection_text?: string) {
     setBusy(true);
     setError("");
@@ -116,7 +133,12 @@ export function CandidatePage({ id }: { id?: string }) {
       const next = await mutate<Session>(
         s ? `sessions/${s.id}/control` : "sessions/start",
         s
-          ? { action: "role", role_id: role.id }
+          ? {
+              action: "role",
+              role_id: role.id,
+              expected_version: s.version,
+              expected_epoch: s.epoch,
+            }
           : { entry, role_id: role.id, selection_text },
       );
       mic.current?.stop();
@@ -125,8 +147,12 @@ export function CandidatePage({ id }: { id?: string }) {
         setStage("prepare");
         setAuto(true);
       } else {
-        sessionStorage.setItem(`auto:${next.id}`, "true");
-        router.replace(`/interview/session/${next.id}`);
+        try {
+          sessionStorage.setItem(`auto:${next.id}`, "true");
+        } catch {}
+        router.replace(
+          `/interview/session/${next.id}?entry=${encodeURIComponent(entry)}`,
+        );
       }
     } catch (e) {
       setError((e as Error).message);
@@ -165,7 +191,11 @@ export function CandidatePage({ id }: { id?: string }) {
           <h1>无法读取这场面试</h1>
           <Notice error>{detail.error.message}</Notice>
           <Button onClick={() => void detail.refetch()}>重试加载</Button>
-          <Button onClick={() => router.replace("/interview")}>
+          <Button
+            onClick={() =>
+              router.replace(`/interview?entry=${encodeURIComponent(entry)}`)
+            }
+          >
             返回面试入口
           </Button>
         </div>
@@ -181,10 +211,18 @@ export function CandidatePage({ id }: { id?: string }) {
             testMode={s.test_mode}
             autoStart={auto}
             onEnded={() =>
-              router.replace(`/interview/session/${s.id}/feedback`)
+              router.replace(
+                `/interview/session/${s.id}/feedback?entry=${encodeURIComponent(s.entry_id ?? entry)}`,
+              )
             }
             onRefresh={() => void detail.refetch()}
-            onChoose={() => setStage("choose")}
+            onChoose={(next) => {
+              queryClient.setQueryData(["session", id], (data: any) => ({
+                ...data,
+                session: next,
+              }));
+              setStage("choose");
+            }}
           />
         ) : (
           <section className="candidate">

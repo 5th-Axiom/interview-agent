@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 
 // Business mutations happen through the UI. Read-only API checks verify that
 // the visible success states correspond to durable records.
-const base = "http://localhost:3100";
+const base = process.env.TEST_BASE_URL || "http://localhost:3100";
 const stamp = Date.now();
 const name = `验收岗位 ${stamp}`;
 const phone = `journey-${stamp}`;
@@ -136,7 +136,7 @@ try {
   await person.getByRole("button", { name: "登录并继续", exact: true }).click();
   await person.getByRole("button", { name: "开始对话", exact: true }).click();
   await person.getByRole("button", { name: new RegExp(name) }).click();
-  await person.waitForURL(/\/interview\/session\/[0-9a-f-]+$/);
+  await person.waitForURL(/\/interview\/session\/[0-9a-f-]+(?:\?[^#]*)?$/);
   sid = new URL(person.url()).pathname.split("/").at(-1);
   await expect
     .poll(
@@ -330,7 +330,7 @@ try {
     .click();
   await person.getByRole("button", { name: "开始对话", exact: true }).click();
   await person.getByRole("button", { name: new RegExp(name) }).click();
-  await person.waitForURL(/\/interview\/session\/[0-9a-f-]+$/);
+  await person.waitForURL(/\/interview\/session\/[0-9a-f-]+(?:\?[^#]*)?$/);
   retrySid = new URL(person.url()).pathname.split("/").at(-1);
   assert.notEqual(retrySid, sid);
   await expect(

@@ -1,11 +1,6 @@
-export class RequestError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+import { RequestError, responseData } from "@/shared/http";
+import { pendingCommand } from "@/shared/pending-command";
+export { RequestError } from "@/shared/http";
 export async function api<T = any>(
   path: string,
   body?: unknown,
@@ -26,23 +21,35 @@ export async function api<T = any>(
       ? AbortSignal.any([signal, AbortSignal.timeout(75000)])
       : AbortSignal.timeout(75000),
   });
-  const data = await response.json();
-  if (!response.ok)
-    throw new RequestError(response.status, data.error ?? "请求失败，请重试");
-  return data;
+  return responseData(response);
 }
 export async function mutate<T = any>(
   path: string,
   body: Record<string, unknown> = {},
-  request_id = crypto.randomUUID(),
+  request_id?: string,
   signal?: AbortSignal,
 ): Promise<T> {
-  const fixed = { ...body, request_id };
+  const pending = request_id ? null : await pendingCommand(path, body);
+  const fixed = { ...body, request_id: request_id ?? pending!.id };
   try {
-    return await api<T>(path, fixed, signal);
+    let result: T;
+    try {
+      result = await api<T>(path, fixed, signal);
+    } catch (e) {
+      if (signal?.aborted || (e instanceof RequestError && e.status < 500))
+        throw e;
+      result = await api<T>(path, fixed, signal);
+    }
+    pending?.finish();
+    return result;
   } catch (e) {
-    if (signal?.aborted) throw e;
-    if (e instanceof RequestError && e.status < 500) throw e;
-    return api<T>(path, fixed, signal);
+    if (
+      e instanceof RequestError &&
+      e.status >= 400 &&
+      e.status < 500 &&
+      e.status !== 408
+    )
+      pending?.finish();
+    throw e;
   }
 }

@@ -27,7 +27,7 @@ export function VoicePanel({
   testMode: boolean;
   onEnded: () => void;
   onRefresh: () => void;
-  onChoose?: () => void;
+  onChoose?: (session: Session) => void;
   autoStart?: boolean;
   preview?: boolean;
 }) {
@@ -44,9 +44,17 @@ export function VoicePanel({
   }, [autoStart]);
   const active = voice.state === "active";
   const ms =
-    Number(session.active_ms) +
+    (Number.isFinite(Number(session.active_ms))
+      ? Number(session.active_ms)
+      : 0) +
     (active && session.active_since
-      ? Math.max(0, time - new Date(session.active_since).getTime())
+      ? Math.max(
+          0,
+          time -
+            (Number.isFinite(new Date(session.active_since).getTime())
+              ? new Date(session.active_since).getTime()
+              : time),
+        )
       : 0);
   const duration = `${Math.floor(ms / 60000)
     .toString()
@@ -65,8 +73,16 @@ export function VoicePanel({
           : voice.audioState === "speaking"
             ? "AI 正在说话"
             : voice.audioState === "thinking"
-              ? "正在思考"
-              : "正在聆听，你可以随时打断";
+              ? "正在组织回答"
+              : ((
+                  {
+                    saving: "正在补传待保存的录音",
+                    generating: "正在组织回答",
+                    synthesizing: "正在准备语音",
+                    buffering: "正在缓冲语音",
+                    recognizing: "正在识别回答",
+                  } as Record<string, string>
+                )[voice.audioState] ?? "正在聆听，你可以随时打断");
   return (
     <section className="candidate">
       <header className="row between session-header">
@@ -75,9 +91,10 @@ export function VoicePanel({
             variant="quiet"
             disabled={voice.controlling}
             onClick={async () => {
-              if (!(await voice.control("choose"))) return;
+              const next = await voice.control("choose");
+              if (!next) return;
               voice.disconnect();
-              onChoose();
+              onChoose(next);
             }}
           >
             <ArrowLeft />
@@ -100,6 +117,12 @@ export function VoicePanel({
         {status}
       </div>
       <Notice error>{voice.error}</Notice>
+      {voice.unsavedMs >= 4000 && (
+        <Notice>
+          还有 {(voice.unsavedMs / 1000).toFixed(1)}{" "}
+          秒录音待保存，请保留此页面。连接恢复后会先补传。
+        </Notice>
+      )}
       {!active && voice.state !== "connecting" && (
         <div className="stack">
           <p>
@@ -113,7 +136,7 @@ export function VoicePanel({
               onClick={() => void voice.connect(session, testMode)}
             >
               <Play />
-              {voice.state === "paused" ? "继续面试" : "继续面试"}
+              继续面试
             </Button>
             {voice.error.includes("接管") ||
             voice.error.includes("已有页面") ? (

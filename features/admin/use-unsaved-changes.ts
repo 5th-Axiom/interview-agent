@@ -9,6 +9,7 @@ export function useUnsavedChanges(dirty: boolean) {
     if (!dirty) return;
     const unload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
+      event.returnValue = "";
     };
     const click = (event: MouseEvent) => {
       if (

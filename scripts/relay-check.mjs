@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
-const base = "http://localhost:3100";
+const base = process.env.TEST_BASE_URL || "http://localhost:3100";
 let cookie = "";
 async function api(path, body, admin = false) {
+  if (path.endsWith("/control") && body) {
+    const { session } = await api(
+      path.replace(/\/control$/, ""),
+      undefined,
+      admin,
+    );
+    body = {
+      ...body,
+      expected_version: session.version,
+      expected_epoch: session.epoch,
+    };
+  }
   const r = await fetch(`${base}/api/${path}`, {
     method: body ? "POST" : "GET",
     headers: {
@@ -31,9 +43,12 @@ const session = await api("sessions/start", {
   role_id: b.roles[0].id,
 });
 function connection() {
-  const ws = new WebSocket("ws://localhost:3101", {
-    headers: { Origin: base },
-  });
+  const ws = new WebSocket(
+    process.env.TEST_RELAY_URL || "ws://localhost:3101",
+    {
+      headers: { Origin: base },
+    },
+  );
   const events = [];
   ws.on("message", (d) => events.push(JSON.parse(d)));
   return {
@@ -49,7 +64,9 @@ function connection() {
       throw new Error(`Timeout waiting ${type}: ${JSON.stringify(events)}`);
     },
     send(data) {
-      ws.send(JSON.stringify(data));
+      ws.send(
+        JSON.stringify(data.type === "init" ? { ...data, protocol: 2 } : data),
+      );
     },
   };
 }
@@ -78,9 +95,7 @@ a.send({
   text: "我负责了一个中文 mixed English 项目。",
 });
 await a.wait("saved");
-// Reproduce VAD arriving in the 350ms between transcript persistence and reply
-// start. With no additional transcript, the server must resume after silence.
-a.send({ type: "interrupt", epoch });
+// Duplicate input must only acknowledge persistence; no additional reply is scheduled.
 a.send({
   type: "text",
   epoch,
@@ -105,6 +120,7 @@ a.send({
   response_id: audio.response_id,
   chunk_id: audio.chunk_id,
   played_ms: audio.duration_ms,
+  receipt: audio.receipt,
   started_ms: 1000,
 });
 const chunk = randomUUID();
@@ -160,7 +176,7 @@ console.log(
     checks: [
       "forged ticket",
       "barge-in stale audio",
-      "VAD during scheduled reply recovers after silence",
+      "duplicate input does not create a new reply",
       "duplicate save receipt",
       "durable audio retry",
       "explicit takeover",

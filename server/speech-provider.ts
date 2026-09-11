@@ -1,15 +1,22 @@
 import WebSocket from "ws";
 import { randomUUID } from "node:crypto";
 
-export type SpeechResult = { key: string; text: string; final: boolean };
+export type SpeechResult = {
+  key: string;
+  text: string;
+  final: boolean;
+  startMs?: number;
+  endMs?: number;
+};
 export type SpeechConfig = {
   provider: "deepgram" | "dashscope";
   endpoint: string;
   key: string;
   model: string;
+  silenceMs?: number;
 };
-export function speechConfig(): SpeechConfig {
-  const provider = process.env.ASR_PROVIDER ?? "deepgram";
+export function speechConfig(override?: string): SpeechConfig {
+  const provider = override || process.env.ASR_PROVIDER || "deepgram";
   if (provider === "dashscope")
     return {
       provider,
@@ -23,7 +30,7 @@ export function speechConfig(): SpeechConfig {
   if (provider !== "deepgram") throw new Error("Unsupported ASR_PROVIDER");
   return {
     provider,
-    endpoint: "wss://api.deepgram.com/v1/listen",
+    endpoint: process.env.DEEPGRAM_WS_URL || "wss://api.deepgram.com/v1/listen",
     key: process.env.DEEPGRAM_API_KEY || "",
     model: process.env.DEEPGRAM_MODEL || "nova-3",
   };
@@ -57,7 +64,7 @@ export class SpeechConnection {
         channels: "1",
         interim_results: "true",
         vad_events: "true",
-        endpointing: "1000",
+        endpointing: String(config.silenceMs ?? 900),
       }))
         url.searchParams.set(key, value);
     this.socket = new WebSocket(url, {
@@ -109,7 +116,7 @@ export class SpeechConnection {
               parameters: {
                 format: "pcm",
                 sample_rate: 16000,
-                max_sentence_silence: 1000,
+                max_sentence_silence: config.silenceMs ?? 900,
                 heartbeat: true,
               },
               input: {},
@@ -138,6 +145,8 @@ export class SpeechConnection {
               key: String(sentence.sentence_id ?? sentence.begin_time),
               text: sentence.text,
               final: !!sentence.sentence_end,
+              startMs: sentence.begin_time,
+              endMs: sentence.end_time,
             });
         } else {
           if (message.type === "Error") return fail();
@@ -148,6 +157,14 @@ export class SpeechConnection {
               key: String(message.start),
               text,
               final: !!message.is_final,
+              startMs:
+                typeof message.start === "number"
+                  ? message.start * 1000
+                  : undefined,
+              endMs:
+                typeof message.duration === "number"
+                  ? (message.start + message.duration) * 1000
+                  : undefined,
             });
         }
       } catch {
@@ -177,6 +194,14 @@ export class SpeechConnection {
     if (this.config.provider === "deepgram")
       this.socket.send(JSON.stringify({ type: "KeepAlive" }));
     else this.send(Buffer.alloc(6400));
+  }
+  finalize() {
+    if (
+      this.config.provider === "deepgram" &&
+      !this.stopping &&
+      this.socket.readyState === WebSocket.OPEN
+    )
+      this.socket.send(JSON.stringify({ type: "Finalize" }));
   }
   finish() {
     if (this.socket.readyState !== WebSocket.OPEN || this.stopping) return;

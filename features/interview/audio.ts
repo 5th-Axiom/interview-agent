@@ -2,11 +2,12 @@ export type Capture = {
   context: AudioContext;
   stream: MediaStream;
   stop: () => void;
-  mute: (value: boolean) => void;
+  mute: (value: boolean) => Promise<void>;
 };
 export async function capture(
-  onFrame: (pcm: ArrayBuffer, level: number) => void,
+  onFrame: (pcm: ArrayBuffer, level: number, final?: boolean) => void,
   onLost: () => void,
+  onActivity?: (level: number, voiced: boolean) => void,
 ): Promise<Capture> {
   const context = new AudioContext();
   await context.resume();
@@ -28,7 +29,14 @@ export async function capture(
     sink.gain.value = 0;
     source.connect(worklet);
     worklet.connect(sink).connect(context.destination);
-    worklet.port.onmessage = (e) => onFrame(e.data.pcm, e.data.level);
+    const acknowledgments = new Map<string, () => void>();
+    worklet.port.onmessage = ({ data }) => {
+      if (data.type === "activity") onActivity?.(data.level, data.voiced);
+      else if (data.type === "mute_ack") {
+        acknowledgments.get(data.id)?.();
+        acknowledgments.delete(data.id);
+      } else onFrame(data.pcm, data.level, data.final);
+    };
     stream.getTracks().forEach((t) => t.addEventListener("ended", onLost));
     let stopped = false;
     const state = () => {
@@ -38,11 +46,27 @@ export async function capture(
     return {
       context,
       stream,
-      mute: (value) =>
-        stream!.getAudioTracks().forEach((t) => (t.enabled = !value)),
+      mute: async (value) => {
+        const id = crypto.randomUUID();
+        if (!value) stream!.getAudioTracks().forEach((t) => (t.enabled = true));
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            acknowledgments.delete(id);
+            reject(new Error("麦克风状态确认超时"));
+          }, 1000);
+          acknowledgments.set(id, () => {
+            clearTimeout(timer);
+            resolve();
+          });
+          worklet.port.postMessage({ type: "mute", value, id });
+        });
+        if (value) stream!.getAudioTracks().forEach((t) => (t.enabled = false));
+      },
       stop: () => {
         if (stopped) return;
         stopped = true;
+        for (const resolve of acknowledgments.values()) resolve();
+        acknowledgments.clear();
         worklet.port.onmessage = null;
         worklet.disconnect();
         source.disconnect();

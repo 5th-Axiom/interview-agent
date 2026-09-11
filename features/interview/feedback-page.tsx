@@ -33,6 +33,8 @@ export function FeedbackPage({ id }: { id: string }) {
     [done, setDone] = useState(false),
     [skipConfirm, setSkipConfirm] = useState(false),
     [retryAudio, setRetryAudio] = useState<ArrayBuffer | null>(null);
+  const [audioIds, setAudioIds] = useState<string[]>([]);
+  const captureGeneration = useRef(0);
   const mic = useRef<Capture | null>(null),
     frames = useRef<ArrayBuffer[]>([]),
     alive = useRef(true),
@@ -42,6 +44,7 @@ export function FeedbackPage({ id }: { id: string }) {
     alive.current = true;
     return () => {
       alive.current = false;
+      captureGeneration.current++;
       mic.current?.stop();
     };
   }, []);
@@ -64,12 +67,15 @@ export function FeedbackPage({ id }: { id: string }) {
     await run(async () => {
       await mutate(
         `sessions/${id}/feedback`,
-        skipped ? { skipped: true } : { rating, tags, text },
+        skipped
+          ? { skipped: true }
+          : { rating, tags, text, audio_ids: audioIds },
       );
       setDone(true);
     });
   }
   function cancelRecord() {
+    captureGeneration.current++;
     recordingRef.current = false;
     mic.current?.stop();
     mic.current = null;
@@ -83,6 +89,8 @@ export function FeedbackPage({ id }: { id: string }) {
         pcm: base64(buffer),
       });
       if (!alive.current) return;
+      if (result.chunk_id)
+        setAudioIds((ids) => [...new Set([...ids, result.chunk_id])]);
       if (result.text) setText((t) => t + (t ? "\n" : "") + result.text);
       setRetryAudio(null);
       setNotice(
@@ -96,6 +104,7 @@ export function FeedbackPage({ id }: { id: string }) {
   }
   async function stopRecord() {
     if (!recordingRef.current) return;
+    captureGeneration.current++;
     recordingRef.current = false;
     mic.current?.stop();
     mic.current = null;
@@ -112,6 +121,7 @@ export function FeedbackPage({ id }: { id: string }) {
   }
   async function record() {
     if (recordingRef.current) return;
+    const generation = ++captureGeneration.current;
     recordingRef.current = true;
     setRecording(true);
     setError("");
@@ -119,20 +129,29 @@ export function FeedbackPage({ id }: { id: string }) {
     try {
       const captured = await capture(
         (pcm) => {
-          if (!recordingRef.current) return;
+          if (!recordingRef.current || generation !== captureGeneration.current)
+            return;
           frames.current.push(pcm);
           if (frames.current.length >= 100) void stopRecord();
         },
         () => {
+          if (generation !== captureGeneration.current) return;
+          captureGeneration.current++;
           recordingRef.current = false;
           mic.current?.stop();
           setRecording(false);
           setError("录音设备中断，请重新录制。");
         },
       );
-      if (!alive.current || !recordingRef.current) captured.stop();
+      if (
+        !alive.current ||
+        !recordingRef.current ||
+        generation !== captureGeneration.current
+      )
+        captured.stop();
       else mic.current = captured;
     } catch {
+      if (generation !== captureGeneration.current) return;
       recordingRef.current = false;
       setRecording(false);
       setError("无法开启麦克风，请检查权限。");
@@ -149,7 +168,13 @@ export function FeedbackPage({ id }: { id: string }) {
       <Shell>
         <div className="candidate-wrap">
           <Notice error>{detail.error.message}</Notice>
-          <Button onClick={() => router.push("/interview")}>
+          <Button
+            onClick={() =>
+              router.push(
+                `/interview?entry=${encodeURIComponent(detail.data?.session?.entry_id ?? new URLSearchParams(location.search).get("entry") ?? "demo")}`,
+              )
+            }
+          >
             返回面试入口
           </Button>
         </div>
@@ -301,7 +326,12 @@ export function FeedbackPage({ id }: { id: string }) {
                     variant="quiet"
                     disabled={busy}
                     onClick={() => {
-                      if (hasContent || recording || retryAudio)
+                      if (
+                        hasContent ||
+                        recording ||
+                        retryAudio ||
+                        audioIds.length
+                      )
                         setSkipConfirm(true);
                       else void save(true);
                     }}
@@ -343,12 +373,22 @@ export function FeedbackPage({ id }: { id: string }) {
               {retry?.status === "approved" && !retry.used_by ? (
                 <Button
                   variant="primary"
-                  onClick={() => router.push("/interview")}
+                  onClick={() =>
+                    router.push(
+                      `/interview?entry=${encodeURIComponent(detail.data?.session?.entry_id ?? new URLSearchParams(location.search).get("entry") ?? "demo")}`,
+                    )
+                  }
                 >
                   进入新一轮面试
                 </Button>
               ) : retry?.used_by ? (
-                <Button onClick={() => router.push("/interview")}>
+                <Button
+                  onClick={() =>
+                    router.push(
+                      `/interview?entry=${encodeURIComponent(detail.data?.session?.entry_id ?? new URLSearchParams(location.search).get("entry") ?? "demo")}`,
+                    )
+                  }
+                >
                   查看最新面试
                 </Button>
               ) : (

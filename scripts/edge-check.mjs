@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-const base = "http://localhost:3100";
+const base = process.env.TEST_BASE_URL || "http://localhost:3100";
 let cookie = "";
 let adminCookie = "";
 async function request(path, body, admin = false, expected = 200) {
+  if (path.endsWith("/control") && body) {
+    const { session } = await request(
+      path.replace(/\/control$/, ""),
+      undefined,
+      admin,
+    );
+    body = {
+      ...body,
+      expected_version: session.version,
+      expected_epoch: session.epoch,
+    };
+  }
   const res = await fetch(`${base}/api/${path}`, {
     method: body === undefined ? "GET" : "POST",
     headers: {

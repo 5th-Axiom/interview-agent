@@ -2,6 +2,18 @@
 
 更新：2026-09-11。依据 PRD、技术方案、实施说明及本轮“自己启动服务，从候选人与控制台用户视角验证并修复”的要求。
 
+## 2026-09-11 整体改造验收（最新）
+
+本节对应 `68dfe808` 之后的整体改造；后续各节保留早期不同阶段的原始记录，不将历史的 23/26/28 项数量改成新数量。最新完整范围见 [整体改造报告](remediation-report.md) 和 [逐项核对表](remediation-status.md)。
+
+- 最终类型检查、Next.js 生产构建通过；本地数据库 005 迁移完成，Web / Relay / Worker 已重启，远端未发布。
+- 48 项自动测试通过；新增真实 PostgreSQL 锁竞争/回滚、Relay 子进程初始化与自然结束竞争、过期租约、转写空洞、慢短信、手动幂等重试和 ASR 保存身份等检查。
+- PC/H5 Chrome、HTTP 边界、Relay/私有录音、页面故障恢复通过；8 秒音频积压后补传恢复、换岗保留证据以及保存期间继续输入均验证。独立 `qa-campus` 招聘入口通过会话/反馈流程。
+- 32 个合成场景的确定性协议回放通过，不代表模型语义质量通过；双人盲评待完成。
+- 最新代码真实供应商 Chrome 全流程通过：试聊、发布、语音面试、反馈转写、录音实际播放、评估重生成和重面资格消费；输入是合成麦克风，issues/errors 为 0。
+- 真实 DeepSeek / TokenDance / DashScope 供应商 smoke 通过。TTS 首包单次 2525ms，尚不能宣称达到方案首声目标。100 轮次、30 插话和手机真人场景仍待验收。
+- 新增迁移、Token 保守估算、长回答后台缓存、助手 outbox/归档和独立后台任务通道已实现；下文“字符预算”“全部音频 200ms 单对象”“350ms/5 秒恢复”等是旧阶段描述，以本轮报告为准。
+
 ## 本轮完整用户流程复验
 
 - 自行运行 Web、Relay、Worker 及独立 PostgreSQL / MinIO；先在明确测试模式跑协议回归，再恢复真实供应商模式。
@@ -68,7 +80,7 @@
 
 ## 当前可运行方式
 
-当前 `.env.local` 使用真实语音供应商，`ALLOW_TEST_OTP=true` 单独开启本地测试登录。`npm run dev:all` 运行 Web 3100、Relay 3101 和 Worker；PostgreSQL / MinIO 使用本项目独立命名空间。若需要离线回归，停止当前进程后运行 `npm run dev:test`，再运行 `test:browser`、`test:mobile`、`test:relay`。`npm test` 始终使用独立测试数据库和明确替身，不因本地联调配置而调用真实供应商。
+当前 `.env.local` 使用真实语音供应商，`ALLOW_TEST_OTP=true` 单独开启本地测试登录。`npm run dev:all` 运行 Web 3100、Relay 3101 和 Worker；PostgreSQL / MinIO 使用本项目独立命名空间。若需要离线回归，停止当前进程后运行 `npm run dev:test`，再运行 `test:browser`、`test:mobile`、`test:relay`。`npm test` 始终使用本项目数据库中的独立临时 schema 和明确替身，不因本地联调配置而调用真实供应商。
 
 ## 外部条件和未作出的承诺
 

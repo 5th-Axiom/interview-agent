@@ -36,22 +36,37 @@ export async function sendCode(phone: string) {
   requireThat(testAuth || /^1\d{10}$/.test(phone), "请输入有效手机号");
   const key = phoneHash(phone),
     code = testAuth ? "123456" : String(randomInt(100000, 999999));
+  if (!testAuth)
+    requireThat(
+      process.env.SMS_URL && process.env.SMS_TOKEN,
+      "短信服务尚未配置",
+      503,
+    );
+  const token = randomUUID();
   await transaction(async (db) => {
     await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [key]);
     const old = (
       await db.query("SELECT * FROM otp_codes WHERE phone_hash=$1", [key])
     ).rows[0];
     requireThat(
-      !old || Date.now() - old.sent_at.getTime() >= 60000,
+      !old ||
+        old.delivery_state === "failed" ||
+        (old.delivery_state === "pending"
+          ? old.delivery_until.getTime() <= Date.now()
+          : Date.now() - old.sent_at.getTime() >= 60000),
       "请在 60 秒后重试",
       429,
     );
+    await db.query(
+      `INSERT INTO otp_codes(phone_hash,code_hash,sent_at,expires_at,delivery_state,delivery_token,delivery_until)
+      VALUES($1,$2,now(),now()+interval '5 minutes','pending',$3,now()+interval '15 seconds')
+      ON CONFLICT(phone_hash) DO UPDATE SET code_hash=$2,sent_at=now(),expires_at=now()+interval '5 minutes',
+      attempts=0,delivery_state='pending',delivery_token=$3,delivery_until=now()+interval '15 seconds'`,
+      [key, hash(code), token],
+    );
+  });
+  try {
     if (!testAuth) {
-      requireThat(
-        process.env.SMS_URL && process.env.SMS_TOKEN,
-        "短信服务尚未配置",
-        503,
-      );
       const r = await fetch(process.env.SMS_URL!, {
         method: "POST",
         headers: {
@@ -63,12 +78,21 @@ export async function sendCode(phone: string) {
       });
       requireThat(r.ok, "短信发送失败，请稍后重试", 502);
     }
-    await db.query(
-      "INSERT INTO otp_codes(phone_hash,code_hash,sent_at,expires_at) VALUES($1,$2,now(),now()+interval '5 minutes') ON CONFLICT(phone_hash) DO UPDATE SET code_hash=$2,sent_at=now(),expires_at=now()+interval '5 minutes',attempts=0",
-      [key, hash(code)],
+    const result = await pool.query(
+      "UPDATE otp_codes SET delivery_state='sent',sent_at=now() WHERE phone_hash=$1 AND delivery_token=$2",
+      [key, token],
     );
-  });
+    requireThat(result.rowCount, "验证码已更新，请重试", 409);
+  } catch (error) {
+    await pool.query(
+      "UPDATE otp_codes SET delivery_state='failed' WHERE phone_hash=$1 AND delivery_token=$2 AND delivery_state='pending'",
+      [key, token],
+    );
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(502, "短信发送失败，请稍后重试");
+  }
 }
+
 export async function login(phone: string, code: string) {
   const key = phoneHash(phone);
   const user = await transaction(async (db) => {
@@ -77,7 +101,12 @@ export async function login(phone: string, code: string) {
         key,
       ])
     ).rows[0];
-    if (!otp || otp.expires_at.getTime() < Date.now() || otp.attempts >= 5)
+    if (
+      !otp ||
+      otp.delivery_state !== "sent" ||
+      otp.expires_at.getTime() < Date.now() ||
+      otp.attempts >= 5
+    )
       return null;
     await db.query(
       "UPDATE otp_codes SET attempts=attempts+1 WHERE phone_hash=$1",

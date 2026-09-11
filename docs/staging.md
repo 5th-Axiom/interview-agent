@@ -47,7 +47,7 @@ TEST_ACCESS_USERNAME=tester
 npm run deploy:staging
 ```
 
-命令通过 `ssh cd` 将当前 Git 提交上传到独立 release 目录，在服务器构建带提交编号的镜像，执行迁移与幂等种子，更新 Web / Relay / Worker，等待容器健康，并检查源站健康、未登录页面跳转和 API 拒绝访问；公网 HTTPS 单独检查。成功后更新 `shared/deploy.env` 的镜像标签与 `current` 链接。源码由 `git archive HEAD` 打包；工作区有未提交内容时拒绝部署，服务器上的密钥和持久化数据继续复用。
+命令通过 `ssh cd` 将当前 Git 提交上传到独立 release 目录，在服务器构建带提交编号的镜像，验证新镜像配置后停止旧 Web / Relay / Worker 写入，再执行迁移与幂等种子并更新服务，等待容器健康，并检查源站健康、未登录页面跳转和 API 拒绝访问；公网 HTTPS 单独检查。成功后更新 `shared/deploy.env` 的镜像标签与 `current` 链接。源码由 `git archive HEAD` 打包；工作区有未提交内容时拒绝部署，服务器上的密钥和持久化数据继续复用。
 
 只检查 SSH、Docker 和服务器配置、不部署：
 
@@ -71,6 +71,7 @@ docker build -f deploy/Dockerfile \
 
 ```bash
 docker compose --env-file ../../shared/deploy.env -f deploy/compose.staging.yaml up -d postgres storage
+docker compose --env-file ../../shared/deploy.env -f deploy/compose.staging.yaml stop --timeout 45 web relay worker
 docker compose --env-file ../../shared/deploy.env -f deploy/compose.staging.yaml run --rm web npm run db:migrate
 docker compose --env-file ../../shared/deploy.env -f deploy/compose.staging.yaml run --rm web npm run db:seed
 docker compose --env-file ../../shared/deploy.env -f deploy/compose.staging.yaml up -d
@@ -79,7 +80,7 @@ docker compose --env-file ../../shared/deploy.env -f deploy/compose.staging.yaml
 
 从 `/home/deploy/interview-agent/releases/<release>` 到 shared 的相对路径为 `../../shared`。迁移与种子可重试；首部署时创建独立私有桶。发布会断开正在面试的连接，应避免在验收或面试中途重启。
 
-回滚时将镜像标签改回保留的上一版本并重新 `up -d`。此方法仅适用于数据库迁移向后兼容的版本；涉及破坏性 schema 变更前须备份并评估恢复。环境文件、数据库卷和对象卷保留在 release 之外；不要使用全机 Docker 清理命令。
+005 语音管线迁移之后，回滚优先关闭新会话功能开关，必须保留能处理 outbox 和归档字节偏移的新 Worker/读取代码，详见 [整体改造报告](remediation-report.md)。不能直接回退到不认识该存储格式的旧二进制。其他版本回滚时可将镜像标签改回兼容的上一版本并重新 `up -d`；涉及破坏性 schema 变更前须备份并评估恢复。环境文件、数据库卷和对象卷保留在 release 之外；不要使用全机 Docker 清理命令。
 
 ## 域名与 ESA 回源
 

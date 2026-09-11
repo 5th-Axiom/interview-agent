@@ -17,6 +17,7 @@ env = env
     `PHONE_HASH_SECRET=${randomBytes(32).toString("hex")}`,
   );
 await fs.writeFile(".env.local", env, { mode: 0o600 });
+await fs.chmod(".env.local", 0o600);
 for (const [cmd, args] of [
   ["docker", ["compose", "up", "-d", "--wait"]],
   ["npm", ["run", "db:migrate"]],

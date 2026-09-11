@@ -1,3 +1,4 @@
+import { createReadStream } from "node:fs";
 import {
   S3Client,
   HeadBucketCommand,
@@ -39,10 +40,10 @@ export async function getObject(Key: string, Range?: string) {
 export async function headObject(Key: string) {
   return client.send(new HeadObjectCommand({ Bucket, Key }));
 }
-export function wav(pcm: Buffer, rate = 16000) {
+export function wavHeader(bytes: number, rate = 16000) {
   const h = Buffer.alloc(44);
   h.write("RIFF");
-  h.writeUInt32LE(36 + pcm.length, 4);
+  h.writeUInt32LE(36 + bytes, 4);
   h.write("WAVEfmt ", 8);
   h.writeUInt32LE(16, 16);
   h.writeUInt16LE(1, 20);
@@ -52,6 +53,27 @@ export function wav(pcm: Buffer, rate = 16000) {
   h.writeUInt16LE(2, 32);
   h.writeUInt16LE(16, 34);
   h.write("data", 36);
-  h.writeUInt32LE(pcm.length, 40);
-  return Buffer.concat([h, pcm]);
+  h.writeUInt32LE(bytes, 40);
+  return h;
+}
+
+export function wav(pcm: Buffer, rate = 16000) {
+  return Buffer.concat([wavHeader(pcm.length, rate), pcm]);
+}
+export async function putFile(Key: string, path: string, length: number) {
+  await client.send(
+    new PutObjectCommand({
+      Bucket,
+      Key,
+      Body: createReadStream(path),
+      ContentLength: length,
+      ContentType: "audio/wav",
+    }),
+  );
+}
+export function missingObject(error: unknown) {
+  return (
+    (error as any)?.$metadata?.httpStatusCode === 404 ||
+    (error as any)?.name === "NoSuchKey"
+  );
 }

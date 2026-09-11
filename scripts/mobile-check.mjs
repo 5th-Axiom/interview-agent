@@ -1,3 +1,4 @@
+const testBase = process.env.TEST_BASE_URL || "http://localhost:3100";
 import { chromium } from "@playwright/test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -43,7 +44,7 @@ process.on("uncaughtException", async (e) => {
   await browser.close();
   process.exit(1);
 });
-await page.goto("http://localhost:3100/interview/login");
+await page.goto(`${testBase}/interview/login`);
 const phone = `mobile-${Date.now()}`;
 await page.getByLabel("手机号", { exact: true }).fill(phone);
 await page.getByRole("button", { name: "获取验证码" }).click();
@@ -96,7 +97,7 @@ await page.getByLabel("测试回答").waitFor({ timeout: 15000 });
 await page.getByRole("button", { name: "结束面试", exact: true }).click();
 await page.getByRole("button", { name: "确认结束", exact: true }).click();
 await page.getByRole("button", { name: "跳过，直接完成" }).click();
-await page.goto("http://localhost:3100/admin/login");
+await page.goto(`${testBase}/admin/login`);
 await page.getByLabel("工作台密码").fill("local-recruiter");
 await page.getByRole("button", { name: "登录工作台", exact: true }).click();
 await page.getByRole("link", { name: "前端工程师", exact: true }).click();
@@ -116,6 +117,7 @@ assert(
     () => document.documentElement.scrollWidth > innerWidth,
   )),
 );
+assert.deepEqual(errors, [], "Browser page errors must fail acceptance");
 console.log(
   JSON.stringify({
     result: "PASS",
