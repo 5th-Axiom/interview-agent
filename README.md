@@ -131,3 +131,5 @@ npm run test:recovery
 - `migrations/`、`scripts/`、`tests/`：迁移、种子、启动和验证
 
 [PRD](docs/prd.md)、[技术方案](docs/technical-plan.md)、[实施说明](docs/implementation-brief.md) 保留产品依据；[实现与验证边界](docs/verification.md) 记录当前工程现状。两个参考仓库仅供只读分析；本次没有复制其源码，因此没有引入需重新分发的参考代码片段。
+
+[语音面试改进方案](docs/interview-improvement-plan.md) 基于 2026-09-11 的测试环境面试，记录重复提问、输入断流与响应延迟的证据，并对照 WorkBuddy、Alice 和 aural-oss 给出分阶段改动与验收指标；方案尚未实施。
