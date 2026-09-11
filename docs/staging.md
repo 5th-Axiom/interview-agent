@@ -14,7 +14,7 @@
 
 1. 用分配的测试账号登录入口；原来的目标路径会保留。用户名和密码错误时返回通用提示，连续尝试会限流。
 2. 候选人进入 `/interview?entry=demo`，填写明确的测试标识，先获取验证码，再输入 `123456`。授权麦克风，试音、选岗并回答，验证字幕、暂停恢复、结束和反馈。
-3. 招聘方进入 `/admin/roles`，用独立管理员密码登录；检查岗位、试聊、发布入口，在面试记录中检查原文、录音、评估和重面审核。
+3. 招聘方进入 `/admin/roles`，工作台密码使用 `local-recruiter`；检查岗位、试聊、发布入口，在面试记录中检查原文、录音、评估和重面审核。按用户要求，受外层账号保护的测试环境沿用本地开发密码。
 4. 点击“退出测试环境”，测试入口、候选人和管理员 Cookie 一起清除；再次访问应回到入口登录。
 
 账号交付文件为操作者本机 Git 忽略的 `.local/staging-login.txt`（0600）。远端只保存密码哈希，不保存入口或管理员明文密码。Cookie 为 HttpOnly / Secure / SameSite=Strict，7 天有效；修改测试用户名、密码哈希或签名密钥后旧入口 Cookie 失效。入口为单个共享测试账号，不是组织成员管理系统。
@@ -35,7 +35,7 @@ NEXT_PUBLIC_RELAY_URL=wss://test.interview.energylt.com/ws
 TEST_ACCESS_USERNAME=tester
 ```
 
-另外必须设置独立的 `TEST_ACCESS_PASSWORD_HASH`、`ADMIN_PASSWORD_HASH`、`AUTH_SECRET`、`PHONE_HASH_SECRET`、数据库 URL、S3 配置与供应商凭据。两类密码均可通过标准输入交给 `node scripts/hash-admin.mjs` 生成 scrypt `salt:hash`，不要把明文放入命令行。只复制授权的语音供应商键，不复制参考项目的数据库或存储凭据。
+另外必须设置独立的 `TEST_ACCESS_PASSWORD_HASH`、`ADMIN_PASSWORD_HASH`、`AUTH_SECRET`、`PHONE_HASH_SECRET`、数据库 URL、S3 配置与供应商凭据。当前测试服的 `ADMIN_PASSWORD_HASH` 对应 `local-recruiter`；外层入口仍使用已分配的账号密码。两类密码均可通过标准输入交给 `node scripts/hash-admin.mjs` 生成 scrypt `salt:hash`，不要把私有明文口令放入命令行。只复制授权的语音供应商键，不复制参考项目的数据库或存储凭据。
 
 `deploy.env` 需设置 `INTERVIEW_IMAGE`、`INTERVIEW_ENV_FILE`（绝对路径）、`INTERVIEW_DB_PASSWORD`、`INTERVIEW_STORAGE_USER`、`INTERVIEW_STORAGE_PASSWORD`；它们必须与应用配置一致。可设置 `POSTGRES_IMAGE` / `MINIO_IMAGE` 指定已验证的镜像版本。生产环境使用 `APP_ENV=production` 并关闭全部测试模式，配置真实短信。
 
