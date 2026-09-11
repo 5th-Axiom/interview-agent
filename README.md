@@ -82,9 +82,11 @@ NODE_ENV=production npm run relay
 NODE_ENV=production npm run worker
 ```
 
-`npm start` 会在启动 Web 之前验证生产环境：开启测试模式或固定 OTP 会直接拒绝启动，缺少供应商及正式登录配置会报错。默认开发 `.env.local` 下的 `npm start` **应当失败**，本地检查请用 `npm run dev:all`。
+`npm start` 会在启动 Web 之前验证部署环境：默认生产环境开启测试模式或固定 OTP 会直接拒绝启动，缺少供应商及正式登录配置会报错。只有显式设置 `APP_ENV=staging`、HTTPS、测试入口账号哈希和管理员哈希的独立测试部署可以开启测试 OTP。默认开发 `.env.local` 下的 `npm start` **应当失败**，本地检查请用 `npm run dev:all`。
 
-参考 [Caddy 配置](deploy/Caddyfile.example) 使用同域 `/ws` 反代 Relay。设置 `APP_URL=https://你的域名`、`NEXT_PUBLIC_RELAY_URL=wss://你的域名/ws` 后重新构建。麦克风在 localhost 或 HTTPS 安全上下文中使用；真正手机检查需 HTTPS 域名，不能把 `localhost` 当手机可达地址。
+参考 [Caddy 配置](deploy/Caddyfile.example) 使用同源 `/ws` 反代 Relay。设置 `APP_URL`、`NEXT_PUBLIC_RELAY_URL` 后重新构建；IP 入口必须保留端口。麦克风在 localhost 或可信 HTTPS 安全上下文中使用；手机需要可达的可信 HTTPS 入口，域名或具有有效 IP 证书的地址均可。
+
+测试服务器的独立 Docker Compose、IP HTTPS 证书、全站账号登录、更新与回滚见 [测试部署说明](docs/staging.md)。测试入口登录保护页面、API 和 WebSocket；通过后，候选人和招聘方仍分别完成业务登录。密钥只保存在部署目录外的私有环境文件中。
 
 不要记录请求 Cookie、Authorization、音频内容或播放 URL 查询参数。Next 请求日志已关闭；部署侧也要避免把短期播放票据写入访问日志。录音通过登录权限和 5 分钟签名票据代理，支持 HTTP Range；S3 对象不公开。
 
@@ -109,7 +111,7 @@ npm run test:journey
 npm run test:recovery
 ```
 
-`npm test` 自动建立独立 `interview_agent_test` 数据库并迁移，不清空开发库。23 项测试覆盖真实数据库事务、OTP、安全配置、摘要、评估、SSE 分包、备用模型、取消、分阶段工具权限及模拟流式 ASR 的修订与轮换。供应商协议测试使用本地 HTTP / WebSocket 服务器。
+`npm test` 自动建立独立 `interview_agent_test` 数据库并迁移，不清空开发库。26 项测试覆盖真实数据库事务、OTP、安全配置、摘要、评估、SSE 分包、备用模型、取消、分阶段工具权限、模拟流式 ASR 的修订与轮换，以及测试入口鉴权、过期、口令轮换、同源校验和限流。供应商协议测试使用本地 HTTP / WebSocket 服务器。
 
 `test:browser` / `test:mobile` / `test:relay` 使用 `npm run dev:test` 对应的明确测试语音服务；`test:live` 使用当前真实供应商服务，并需要 `test:providers` 生成的合成音频。不要在同一端口同时启动两套服务。
 

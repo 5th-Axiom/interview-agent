@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { validateEnvironment } from "../server/config";
 Object.assign(process.env, { NODE_ENV: "production" });
+const { validateEnvironment } = await import("../server/config");
 validateEnvironment();
 const require = createRequire(import.meta.url);
 const child = spawn(

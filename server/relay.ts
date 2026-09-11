@@ -10,13 +10,24 @@ import { GenerationGate } from "../shared/voice-state";
 import { buildContext } from "./context";
 import { streamModel, synthesizeStream } from "./model";
 import { LiveASR } from "./asr";
+import { hasTestAccess } from "./test-access";
 import { putObject, wav } from "./storage";
 validateEnvironment();
 const http = createServer((_, res) => {
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ service: "interview-relay", testMode }));
 });
-const wss = new WebSocketServer({ server: http, maxPayload: 150000 });
+const wss = new WebSocketServer({
+  server: http,
+  maxPayload: 150000,
+  verifyClient(info, done) {
+    void hasTestAccess(info.req.headers.cookie)
+      .then((ok) =>
+        done(ok, ok ? undefined : 401, ok ? undefined : "Test access required"),
+      )
+      .catch(() => done(false, 401, "Test access required"));
+  },
+});
 const clients = new Map<string, WebSocket>();
 let draining = false;
 wss.on("connection", (ws, req) => {

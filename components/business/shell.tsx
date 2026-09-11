@@ -15,7 +15,8 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
-import { Button } from "../base/ui";
+import { Button, Notice } from "../base/ui";
+import { testAccess } from "@/features/access/api";
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
     () =>
@@ -28,16 +29,20 @@ export function Providers({ children }: { children: ReactNode }) {
 export function Shell({
   children,
   admin = false,
+  access = false,
 }: {
   children: ReactNode;
   admin?: boolean;
+  access?: boolean;
 }) {
   const [dark, setDark] = useState(false);
+  const [accessError, setAccessError] = useState("");
   const path = usePathname();
   const config = useQuery({
     queryKey: ["config"],
     queryFn: () => fetch("/api/config").then((r) => r.json()),
     staleTime: Infinity,
+    enabled: !access,
   });
   useEffect(() => {
     const value = localStorage.getItem("appearance") === "dark";
@@ -63,16 +68,33 @@ export function Shell({
           </span>
         </Link>
         <div className="row">
-          <Link
-            className="btn quiet small"
-            href={admin ? "/interview" : "/admin/roles"}
-            aria-label={admin ? "候选人入口" : "招聘方工作台"}
-          >
-            <span className="desktop-label">
-              {admin ? "候选人入口" : "招聘方工作台"}
-            </span>
-            <ArrowUpRight />
-          </Link>
+          {!access && (
+            <Link
+              className="btn quiet small"
+              href={admin ? "/interview" : "/admin/roles"}
+              aria-label={admin ? "候选人入口" : "招聘方工作台"}
+            >
+              <span className="desktop-label">
+                {admin ? "候选人入口" : "招聘方工作台"}
+              </span>
+              <ArrowUpRight />
+            </Link>
+          )}
+          {config.data?.accessGate && !access && (
+            <Button
+              variant="quiet small"
+              onClick={async () => {
+                try {
+                  await testAccess({ action: "logout" });
+                  window.location.assign("/access");
+                } catch {
+                  setAccessError("退出失败，请重试");
+                }
+              }}
+            >
+              退出测试环境
+            </Button>
+          )}
           <Button
             variant="quiet icon"
             aria-label={dark ? "切换浅色" : "切换深色"}
@@ -82,6 +104,7 @@ export function Shell({
           </Button>
         </div>
       </div>
+      <Notice error>{accessError}</Notice>
       {config.data?.testMode && (
         <div className="test-banner">
           开发测试模式 · 测试对话不代表真实面试评估 · ASR / TTS 未调用真实供应商

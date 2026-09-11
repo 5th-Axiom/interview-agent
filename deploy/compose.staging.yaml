@@ -1,0 +1,83 @@
+name: interview-agent-staging
+x-app: &app
+  image: ${INTERVIEW_IMAGE:?Set INTERVIEW_IMAGE to the release tag}
+  restart: unless-stopped
+  init: true
+  env_file: ${INTERVIEW_ENV_FILE:?Set an absolute private environment file path}
+  volumes:
+    - ${INTERVIEW_ENV_FILE}:/app/.env.local:ro
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    storage:
+      condition: service_started
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      POSTGRES_DB: interview_agent
+      POSTGRES_USER: interview_agent
+      POSTGRES_PASSWORD: ${INTERVIEW_DB_PASSWORD:?Set the independent database password}
+    volumes:
+      - interview_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U interview_agent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  storage:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    restart: unless-stopped
+    mem_limit: 384m
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${INTERVIEW_STORAGE_USER:?Set an independent storage user}
+      MINIO_ROOT_PASSWORD: ${INTERVIEW_STORAGE_PASSWORD:?Set an independent storage password}
+    volumes:
+      - interview_objects:/data
+  web:
+    <<: *app
+    mem_limit: 640m
+    ports: ["127.0.0.1:13100:3100"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3100/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 20s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+  relay:
+    <<: *app
+    mem_limit: 320m
+    command: ["npm", "run", "relay"]
+    ports: ["127.0.0.1:13101:3101"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3101').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+  worker:
+    <<: *app
+    mem_limit: 512m
+    command: ["npm", "run", "worker"]
+volumes:
+  interview_pg:
+  interview_objects:

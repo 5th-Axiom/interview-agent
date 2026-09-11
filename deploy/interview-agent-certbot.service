@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew Interview Agent IP TLS certificate
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/interview-certbot/bin/certbot renew --config-dir /etc/interview-agent/letsencrypt --work-dir /var/lib/interview-agent-acme --logs-dir /var/log/interview-agent-acme --quiet --deploy-hook /etc/interview-agent/reload-nginx.sh

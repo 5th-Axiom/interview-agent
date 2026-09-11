@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.local
+.impeccable/review
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+coverage
+playwright-report
+test-results
+tmp

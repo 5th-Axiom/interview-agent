@@ -103,7 +103,8 @@ export async function login(phone: string, code: string) {
 }
 export async function adminLogin(password: string) {
   let valid = false;
-  if (testAuth) valid = password === process.env.DEV_ADMIN_PASSWORD;
+  if (testAuth && !process.env.ADMIN_PASSWORD_HASH)
+    valid = password === process.env.DEV_ADMIN_PASSWORD;
   else {
     const [salt, digest] = (process.env.ADMIN_PASSWORD_HASH ?? "").split(":");
     if (salt && digest) {

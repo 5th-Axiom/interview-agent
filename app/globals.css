@@ -474,6 +474,22 @@ textarea {
   align-items: center;
   padding: 70px 36px;
 }
+.access-layout {
+  width: min(100%, 480px);
+  min-height: calc(100svh - 110px);
+  margin: auto;
+  padding: var(--space-6) var(--space-4);
+  display: grid;
+  align-items: center;
+}
+.access-layout h1 {
+  font-size: 28px;
+  margin-bottom: var(--space-3);
+}
+.access-password-toggle {
+  min-height: 44px;
+  cursor: pointer;
+}
 .login-story h1 {
   font-size: 40px;
   max-width: 420px;

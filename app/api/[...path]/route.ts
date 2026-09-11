@@ -11,6 +11,7 @@ import {
   phoneHash,
 } from "@/server/auth";
 import { validateEnvironment, testMode, testAuth } from "@/server/config";
+import { accessEnabled } from "@/server/test-access";
 import { pool, transaction, requireThat, ApiError } from "@/server/db";
 import {
   command,
@@ -80,6 +81,7 @@ async function handler(req: NextRequest) {
       return NextResponse.json({
         testMode,
         otp: testAuth,
+        accessGate: accessEnabled(),
       });
     if (path[0] === "auth" && !read) {
       const ip = req.headers.get("x-forwarded-for")?.split(",")[0] ?? "local";
