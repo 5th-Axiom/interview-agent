@@ -325,7 +325,7 @@ test("one input revision creates one reply; completion and noise never create or
   assert(reply.controller.signal.aborted);
   assert(c.isCurrent(correction));
 });
-test("partial speech is not a heard assistant turn; corrected input keeps logical order", () => {
+test("partial questions retain their position and playback uncertainty; corrected input keeps logical order", () => {
   const events = [
     {
       event_id: "a",
@@ -360,8 +360,11 @@ test("partial speech is not a heard assistant turn; corrected input keeps logica
     { event_id: "q", duration_ms: 1000, played_ms: 400 },
   ]);
   assert.equal(view.lastQuestion.playback, "partial");
+  assert.equal(view.turns[1].event_id, "q");
+  assert.equal(view.turns[1].playback, "partial");
+  assert.equal(view.latestInput.follows_assistant_event_id, "q");
   assert.deepEqual(
-    view.turns.map((t) => t.content),
+    view.turns.filter((t) => t.role === "user").map((t) => t.content),
     ["correction", "new answer"],
   );
   assert.equal(view.latestInput.content, "new answer");

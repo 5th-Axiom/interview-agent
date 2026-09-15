@@ -28,6 +28,7 @@ type Group = {
   revision: number;
   keys: string[];
   text: string;
+  evidence: string;
 };
 export class LiveASR {
   private current: SpeechConnection | null = null;
@@ -221,18 +222,23 @@ export class LiveASR {
     }
     // Keep the exact command identity/content across an unknown database outcome.
     const { keys, values, group, id, turn, revision, text } = this.attempt;
+    const chunkNos = [...new Set(values.flatMap((p) => p.chunks))];
+    const provisional = values.some((p) => !p.final);
+    const evidence = JSON.stringify([provisional, [...chunkNos].sort()]);
+    const changed = text !== group?.text || evidence !== group?.evidence;
     try {
-      if (text !== group?.text)
+      if (changed)
         await this.onText(id, text, group?.id, {
-          chunkNos: [...new Set(values.flatMap((p) => p.chunks))],
-          provisional: values.some((p) => !p.final),
+          chunkNos,
+          provisional,
           providerId: values[0].provider,
           inputTurnId: turn,
           revision,
         });
       if (!group) this.committedAt = Date.now();
-      const next =
-        text === group?.text ? group! : { id, turn, revision, keys, text };
+      const next = changed
+        ? { id, turn, revision, keys, text, evidence }
+        : group!;
       for (let i = 0; i < keys.length; i++) {
         this.committed.set(keys[i], next);
         if (this.parts.get(keys[i]) === values[i]) this.pending.delete(keys[i]);

@@ -1,4 +1,8 @@
-import { conversationView } from "./conversation-view";
+import {
+  conversationView,
+  conversationPolicy,
+  CONVERSATION_VIEW_VERSION,
+} from "./conversation-view";
 import { estimateTokens, contextPressure } from "./context-budget";
 import {
   modelProfile,
@@ -128,7 +132,7 @@ export async function buildContext(
     });
   messages.push({
     role: "system",
-    content: `对话投影事实：${JSON.stringify({ lastQuestion: view.lastQuestion, revisions: view.revisions })}。partial/unheard 表示候选人没有完整听到，不能当成已问完；不得按播放百分比猜测听到哪些字。`,
+    content: `对话投影 ${CONVERSATION_VIEW_VERSION}：${JSON.stringify({ lastQuestion: view.lastQuestion, revisions: view.revisions, latestInputFollows: view.latestInput?.follows_assistant_event_id ?? null })}。${conversationPolicy}`,
   });
   if (s.runtime_config?.conversationView === false)
     messages.push({

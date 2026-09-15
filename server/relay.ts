@@ -10,6 +10,8 @@ import { clientEvent } from "../shared/contracts";
 import { AsyncQueue } from "../shared/async-queue";
 import { TaskLane } from "../shared/task-lane";
 import { buildContext } from "./context";
+import { CONVERSATION_VIEW_VERSION } from "./conversation-view";
+import { sameTranscriptContent } from "./transcript-revision";
 import { streamModel, synthesizeStream, type Message } from "./model";
 import { LiveASR, type TranscriptInfo } from "./asr";
 import { speechConfig } from "./speech-provider";
@@ -328,6 +330,7 @@ wss.on("connection", (ws, req) => {
                 input_turn_id: input?.id,
                 generation: r.generation,
                 prompt_version: runtime.promptVersion,
+                conversation_view_version: CONVERSATION_VIEW_VERSION,
               },
             });
             return true;
@@ -484,10 +487,20 @@ wss.on("connection", (ws, req) => {
       if (revisionOf) {
         const older = (
           await db.query(
-            "SELECT seq FROM events WHERE session_id=$1 AND event_id=$2",
+            "SELECT seq,event_id,text,metadata FROM events WHERE session_id=$1 AND event_id=$2",
             [sid, revisionOf],
           )
         ).rows[0];
+        // Persist the final wording, certainty and coverage above, but formatting
+        // changes within this same input do not cancel/restart its model reply.
+        if (
+          older &&
+          info &&
+          (older.metadata?.input_turn_id ?? older.event_id) ===
+            info.inputTurnId &&
+          sameTranscriptContent(older.text, text)
+        )
+          return false;
         if (
           older &&
           (

@@ -226,3 +226,62 @@ test("ASR save retries retain the exact event identity after an unknown outcome"
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
+
+test("unchanged final text still upgrades provisional evidence and records actual audio coverage once", async () => {
+  const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+  await new Promise((r) => server.once("listening", r));
+  let socket: WebSocket | undefined;
+  server.on("connection", (s) => (socket = s));
+  const saved: any[] = [];
+  const asr = new LiveASR(
+    (id, text, revisionOf, info) => {
+      saved.push({ id, text, revisionOf, info });
+    },
+    () => {},
+    () => assert.fail("ASR error"),
+    `ws://127.0.0.1:${(server.address() as any).port}`,
+  );
+  const emit = (final: boolean) =>
+    socket!.send(
+      JSON.stringify({
+        type: "Results",
+        start: 0,
+        ...(final ? { duration: 0.2 } : {}),
+        is_final: final,
+        channel: { alternatives: [{ transcript: "我用了缓存" }] },
+      }),
+    );
+  async function waitFor(count: number) {
+    for (let i = 0; i < 100; i++) {
+      if (saved.length >= count) return;
+      await delay(20);
+    }
+    assert.fail("No transcript commit");
+  }
+  try {
+    await asr.open();
+    while (!socket) await delay(10);
+    asr.send(Buffer.alloc(6400), {
+      chunkNo: "fixture-audio",
+      startMs: 0,
+      durationMs: 200,
+    });
+    emit(false);
+    await waitFor(1);
+    emit(true);
+    await waitFor(2);
+    assert.equal(saved[0].info.provisional, true);
+    assert.deepEqual(saved[0].info.chunkNos, []);
+    assert.equal(saved[1].info.provisional, false);
+    assert.deepEqual(saved[1].info.chunkNos, ["fixture-audio"]);
+    assert.equal(saved[1].revisionOf, saved[0].id);
+    assert.equal(saved[1].info.inputTurnId, saved[0].info.inputTurnId);
+    emit(true);
+    await delay(100);
+    assert.equal(saved.length, 2);
+  } finally {
+    asr.close();
+    socket?.terminate();
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});

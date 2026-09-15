@@ -7,17 +7,19 @@ import { WebSocket, WebSocketServer } from "ws";
 import { pool } from "../server/db";
 import { signTicket } from "../server/auth";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const modelRequests: any[] = [];
 async function listen(server: ReturnType<typeof createServer>) {
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   return (server.address() as any).port;
 }
 const fake = createServer(async (req, res) => {
-  for await (const _ of req) {
-  }
+  let body = "";
+  for await (const part of req) body += part;
   if (req.url?.includes("/audio/speech")) {
     res.end(Buffer.alloc(38400));
     return;
   }
+  modelRequests.push(JSON.parse(body));
   res.setHeader("Content-Type", "text/event-stream");
   res.end(
     "data: " +
@@ -286,6 +288,126 @@ test("completed reply ignores old interruption and never regenerates after five 
     );
   } finally {
     clearInterval(ticker);
+    c.ws.close();
+  }
+});
+
+test("ASR formatting revisions preserve evidence without cancelling a reply; substantive corrections and new turns still generate", async () => {
+  await ready;
+  const sid = await session(false),
+    c = await connection(sid),
+    readyEvent = await c.wait("ready");
+  const priorSockets = new Set(fakeSpeech.clients);
+  c.send({ type: "go", epoch: readyEvent.epoch });
+  await c.wait("active");
+  const opening = await c.wait("thinking");
+  await c.wait("generation_done");
+  c.send({
+    type: "interrupt",
+    epoch: readyEvent.epoch,
+    response_id: opening.response_id,
+  });
+  await c.wait("cancel");
+  // Pending provider results can arrive after mute; prevent the fixture from
+  // being mistaken for a real microphone that has stopped supplying audio.
+  c.send({
+    type: "input_state",
+    epoch: readyEvent.epoch,
+    event_id: randomUUID(),
+    muted: true,
+    frame_seq: 0,
+    monotonic_ms: 1,
+  });
+  const speech = [...fakeSpeech.clients].find((s) => !priorSockets.has(s))!;
+  assert(speech);
+  const emit = (text: string, final: boolean, start = 0) =>
+    speech.send(
+      JSON.stringify({
+        type: "Results",
+        start,
+        is_final: final,
+        channel: { alternatives: [{ transcript: text }] },
+      }),
+    );
+  const readInputs = async () =>
+    (
+      await pool.query(
+        "SELECT event_id,text,metadata FROM events WHERE session_id=$1 AND kind='utterance' ORDER BY seq",
+        [sid],
+      )
+    ).rows;
+  const readRuns = async () =>
+    (
+      await pool.query(
+        "SELECT id,state FROM response_runs WHERE session_id=$1 AND trigger='user_turn' ORDER BY created_at",
+        [sid],
+      )
+    ).rows;
+  async function inputs(count: number) {
+    for (let i = 0; i < 150; i++) {
+      const rows = await readInputs();
+      if (rows.length >= count) return rows;
+      await sleep(20);
+    }
+    throw Error("Missing ASR evidence");
+  }
+  try {
+    emit("嗯就用Agent Loop 去实现的", false);
+    const reply = await c.wait("thinking");
+    await c.wait("generation_done", (e) => e.response_id === reply.response_id);
+    emit("嗯，就用Agent Loop去实现的。", true);
+    const revisions = await inputs(2);
+    await sleep(150);
+    assert.equal(revisions[1].metadata.revision_of, revisions[0].event_id);
+    assert.equal(revisions[1].metadata.provisional, false);
+    assert.equal(
+      revisions[0].metadata.input_turn_id,
+      revisions[1].metadata.input_turn_id,
+    );
+    assert.deepEqual(
+      (await readRuns()).map((r) => r.id),
+      [reply.response_id],
+    );
+    assert.notEqual((await readRuns())[0].state, "cancelled");
+    assert(
+      !c.events.some(
+        (e) => e.type === "cancel" && e.response_id === reply.response_id,
+      ),
+    );
+    emit("嗯，就用Agent Loop去实现的。", true);
+    await sleep(100);
+    assert.equal((await readInputs()).length, 2);
+    emit("嗯，没用Agent Loop去实现。", true);
+    const correction = await c.wait("thinking");
+    await c.wait(
+      "generation_done",
+      (e) => e.response_id === correction.response_id,
+    );
+    assert.notEqual(correction.response_id, reply.response_id);
+    assert.equal((await readRuns()).length, 2);
+    const messages = modelRequests
+      .filter((r) =>
+        r.messages.some(
+          (m: any) =>
+            m.role === "user" && m.content === "嗯，没用Agent Loop去实现。",
+        ),
+      )
+      .at(-1)?.messages;
+    assert(
+      messages?.some(
+        (m: any) => m.role === "assistant" && m.content.includes("unheard"),
+      ),
+    );
+    // Identical wording in a genuinely new utterance is not globally discarded.
+    emit("嗯，没用Agent Loop去实现。", true, 5);
+    const repeated = await c.wait("thinking");
+    await inputs(4);
+    await c.wait(
+      "generation_done",
+      (e) => e.response_id === repeated.response_id,
+    );
+    assert.equal((await readRuns()).length, 3);
+  } finally {
     c.ws.close();
   }
 });
