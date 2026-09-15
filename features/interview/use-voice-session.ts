@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { capture, type Capture, base64, pcmBuffer } from "./audio";
 import { api, mutate } from "./api";
 import { pendingVoice } from "./pending-voice";
 import { serverEvent, type Session } from "@/shared/contracts";
+import { liveCaptionsReducer } from "./live-captions";
 export function useVoiceSession(
   initialSession: Session,
   onEnded: () => void,
@@ -12,12 +13,12 @@ export function useVoiceSession(
   const [state, setState] = useState("recovery"),
     [audioState, setAudioState] = useState("idle"),
     [level, setLevel] = useState(0),
-    [subtitle, setSubtitle] = useState(""),
     [error, setError] = useState(""),
     [muted, setMuted] = useState(false),
     [endConfirm, setEndConfirm] = useState(false),
     [controlling, setControlling] = useState(false),
     [unsavedMs, setUnsavedMs] = useState(0);
+  const [liveCaptions, updateCaptions] = useReducer(liveCaptionsReducer, []);
   const pending = useRef(pendingVoice(initialSession.id));
   const ws = useRef<WebSocket | null>(null),
     mic = useRef<Capture | null>(null),
@@ -119,6 +120,8 @@ export function useVoiceSession(
     setUnsavedMs(backlog());
   }
   function stopPlayback(ack = true) {
+    if (rid.current)
+      updateCaptions({ type: "interrupt", responseId: rid.current });
     const context = playContext.current;
     const current = playing.current;
     playing.current = [];
@@ -170,6 +173,7 @@ export function useVoiceSession(
     if (disconnecting.current) return;
     disconnecting.current = true;
     active.current = false;
+    updateCaptions({ type: "suspend" });
     // Detach transport before stopping nodes: backpressure cannot recursively disconnect through receipts.
     const socket = ws.current;
     ws.current = null;
@@ -349,7 +353,13 @@ export function useVoiceSession(
           return;
         }
         socket.send(
-          JSON.stringify({ type: "init", ticket, takeover, protocol: 2 }),
+          JSON.stringify({
+            type: "init",
+            ticket,
+            takeover,
+            protocol: 2,
+            captions: true,
+          }),
         );
       };
       socket.onclose = () => {
@@ -407,6 +417,11 @@ export function useVoiceSession(
           return;
         }
         if (e.epoch !== epoch.current) return;
+        if (e.type === "user_caption") {
+          updateCaptions({ type: "user", update: e });
+          if (!active.current) updateCaptions({ type: "suspend" });
+          return;
+        }
         if (e.type === "pong") {
           const now = Date.now(),
             rtt = now - e.client_ms;
@@ -488,6 +503,7 @@ export function useVoiceSession(
         }
         if (e.type === "paused") {
           active.current = false;
+          updateCaptions({ type: "suspend" });
           stopPlayback();
           stopCapture();
           setState(e.status === "paused" ? "paused" : "recovery");
@@ -572,10 +588,17 @@ export function useVoiceSession(
             () => {
               if (
                 generation === scene.current &&
-                rid.current === e.response_id
+                rid.current === e.response_id &&
+                active.current &&
+                playing.current.includes(item)
               ) {
                 setAudioState("speaking");
-                setSubtitle(e.text);
+                updateCaptions({
+                  type: "play",
+                  eventId: e.event_id,
+                  responseId: e.response_id,
+                  text: e.text,
+                });
                 telemetry("play_start", undefined, e.response_id);
               }
             },
@@ -685,7 +708,7 @@ export function useVoiceSession(
     state,
     audioState,
     level,
-    subtitle,
+    liveCaptions,
     error,
     setError,
     muted,

@@ -207,9 +207,8 @@ export function RoleEditor({
               <Button
                 variant="quiet"
                 disabled={busy}
-                aria-expanded={showPromptAssistant}
-                aria-controls="prompt-assistant"
-                onClick={() => setShowPromptAssistant(!showPromptAssistant)}
+                aria-haspopup="dialog"
+                onClick={() => setShowPromptAssistant(true)}
               >
                 <PenLine />
                 帮我写面试说明

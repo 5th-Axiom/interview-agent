@@ -139,7 +139,7 @@ async function session(simulate = true) {
   );
   return id;
 }
-async function connection(sid: string, takeover = true) {
+async function connection(sid: string, takeover = true, captions = false) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}`, {
       headers: { Origin: `http://127.0.0.1:${port}` },
     }),
@@ -156,6 +156,7 @@ async function connection(sid: string, takeover = true) {
     }),
     takeover,
     protocol: 2,
+    captions,
   });
   const wait = async (type: string, predicate = (e: any) => true) => {
     for (let i = 0; i < 250; i++) {
@@ -169,6 +170,32 @@ async function connection(sid: string, takeover = true) {
   };
   return { ws, events, send, wait };
 }
+test("test input captions echo the saved text only to clients that requested them", async () => {
+  await ready;
+  for (const captions of [false, true]) {
+    const sid = await session(),
+      c = await connection(sid, true, captions);
+    try {
+      const { epoch } = await c.wait("ready");
+      c.send({ type: "go", epoch });
+      await c.wait("active");
+      const event_id = randomUUID();
+      c.send({ type: "text", epoch, event_id, text: "字幕测试回答" });
+      await c.wait("saved", (e) => e.event_ids.includes(event_id));
+      if (captions) {
+        const caption = await c.wait("user_caption");
+        assert.equal(caption.utterance_id, event_id);
+        assert.equal(caption.text, "字幕测试回答");
+        assert.equal(caption.final, true);
+      } else {
+        await sleep(100);
+        assert(!c.events.some((e) => e.type === "user_caption"));
+      }
+    } finally {
+      c.ws.close();
+    }
+  }
+});
 test("closed initialization cannot take over a newer connection after waiting for the database lock", async () => {
   await ready;
   const sid = await session(),
@@ -295,7 +322,7 @@ test("completed reply ignores old interruption and never regenerates after five 
 test("ASR formatting revisions preserve evidence without cancelling a reply; substantive corrections and new turns still generate", async () => {
   await ready;
   const sid = await session(false),
-    c = await connection(sid),
+    c = await connection(sid, true, true),
     readyEvent = await c.wait("ready");
   const priorSockets = new Set(fakeSpeech.clients);
   c.send({ type: "go", epoch: readyEvent.epoch });
@@ -353,9 +380,22 @@ test("ASR formatting revisions preserve evidence without cancelling a reply; sub
   }
   try {
     emit("嗯就用Agent Loop 去实现的", false);
+    const interim = await c.wait("user_caption");
+    assert.equal(interim.final, false);
+    assert.equal(interim.revision, 0);
+    assert.equal(interim.epoch, readyEvent.epoch);
+    assert.equal(
+      (await readInputs()).length,
+      0,
+      "live display must precede silence/commit",
+    );
     const reply = await c.wait("thinking");
     await c.wait("generation_done", (e) => e.response_id === reply.response_id);
     emit("嗯，就用Agent Loop去实现的。", true);
+    const final = await c.wait("user_caption");
+    assert.equal(final.utterance_id, interim.utterance_id);
+    assert.equal(final.revision, 1);
+    assert.equal(final.final, true);
     const revisions = await inputs(2);
     await sleep(150);
     assert.equal(revisions[1].metadata.revision_of, revisions[0].event_id);
@@ -377,6 +417,7 @@ test("ASR formatting revisions preserve evidence without cancelling a reply; sub
     emit("嗯，就用Agent Loop去实现的。", true);
     await sleep(100);
     assert.equal((await readInputs()).length, 2);
+    assert(!c.events.some((e) => e.type === "user_caption"));
     emit("嗯，没用Agent Loop去实现。", true);
     const correction = await c.wait("thinking");
     await c.wait(

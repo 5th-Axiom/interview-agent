@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Button, Notice, Dialog } from "@/components/base/ui";
 import { VoiceOrb } from "./voice-orb";
+import { LiveCaptions } from "./live-captions";
 import { useVoiceSession } from "@/features/interview/use-voice-session";
 import { Session } from "@/shared/contracts";
 export type VoicePanelHandle = {
@@ -90,7 +91,7 @@ export function VoicePanel({
                   } as Record<string, string>
                 )[voice.audioState] ?? "正在聆听，你可以随时打断");
   return (
-    <section className="candidate">
+    <section className={`candidate${captions ? " with-captions" : ""}`}>
       <header className="row between session-header">
         {onChoose ? (
           <Button
@@ -159,8 +160,8 @@ export function VoicePanel({
           </div>
         </div>
       )}
-      {captions && voice.subtitle && (
-        <p className="subtitle">{voice.subtitle}</p>
+      {captions && (
+        <LiveCaptions entries={voice.liveCaptions} active={active} />
       )}
       <div className="voice-controls">
         <div className="voice-control">
@@ -199,7 +200,11 @@ export function VoicePanel({
           <span>结束</span>
         </div>
       </div>
-      <Button variant="quiet" onClick={() => setCaptions(!captions)}>
+      <Button
+        variant="quiet"
+        aria-pressed={captions}
+        onClick={() => setCaptions(!captions)}
+      >
         <Captions />
         {captions ? "隐藏字幕" : "显示字幕"}
       </Button>

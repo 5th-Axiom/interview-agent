@@ -2,7 +2,62 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WebSocketServer, WebSocket } from "ws";
 import { LiveASR } from "../server/asr";
+import type { UserCaptionUpdate } from "../shared/contracts";
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+test("live captions keep provider segments distinct across rotation and ignore callbacks after close", async () => {
+  const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+  await new Promise((r) => server.once("listening", r));
+  const sockets: WebSocket[] = [],
+    captions: UserCaptionUpdate[] = [];
+  server.on("connection", (socket) => sockets.push(socket));
+  const asr = new LiveASR(
+    () => {},
+    () => {},
+    () => {},
+    `ws://127.0.0.1:${(server.address() as { port: number }).port}`,
+    undefined,
+    undefined,
+    (update) => {
+      captions.push(update);
+    },
+  );
+  const emit = (index: number, text: string, final: boolean) =>
+    sockets[index].send(
+      JSON.stringify({
+        type: "Results",
+        start: 0,
+        is_final: final,
+        channel: { alternatives: [{ transcript: text }] },
+      }),
+    );
+  const waitFor = async (count: number) => {
+    for (let i = 0; i < 100 && captions.length < count; i++) await delay(10);
+    assert.equal(captions.length, count);
+  };
+  try {
+    await asr.open();
+    emit(0, "第一段临时", false);
+    await waitFor(1);
+    asr.rotate();
+    for (let i = 0; i < 100 && sockets.length < 2; i++) await delay(10);
+    emit(1, "新的连接", false);
+    await waitFor(2);
+    emit(0, "第一段最终", true);
+    await waitFor(3);
+    assert.notEqual(captions[0].utterance_id, captions[1].utterance_id);
+    assert.equal(captions[2].utterance_id, captions[0].utterance_id);
+    assert.equal(captions[2].revision, 1);
+    asr.close();
+    if (sockets[1].readyState === WebSocket.OPEN)
+      emit(1, "关闭后的迟到结果", true);
+    await delay(50);
+    assert.equal(captions.length, 3);
+  } finally {
+    asr.close();
+    for (const socket of sockets) socket.terminate();
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
 test("live ASR de-duplicates finals, preserves revisions and drains old connection on rotation", async () => {
   const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
   await new Promise((r) => server.once("listening", r));

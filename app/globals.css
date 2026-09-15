@@ -445,12 +445,95 @@ textarea {
   font-size: 13px;
   color: var(--color-text-secondary);
 }
-.subtitle {
-  font-size: 18px;
+.live-captions {
+  width: 100%;
   max-width: 540px;
-  margin: 12px 0;
-  min-height: 56px;
-  text-wrap: pretty;
+  text-align: left;
+  border-block: 1px solid var(--color-border);
+}
+.live-captions-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  font-size: 14px;
+}
+.live-captions-heading .btn {
+  font-size: 14px;
+  padding-block: 4px;
+}
+.live-captions-scroll {
+  height: clamp(180px, calc(100svh - 560px), 240px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  scrollbar-color: var(--color-border) transparent;
+  scrollbar-width: thin;
+}
+.live-caption {
+  padding: 10px 12px 14px 0;
+  overflow-wrap: anywhere;
+}
+.live-caption + .live-caption {
+  border-top: 1px solid var(--color-border);
+}
+.live-caption-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-bg-canvas);
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.preview .live-caption-label {
+  background: var(--color-bg-surface);
+}
+.live-caption[data-speaker="assistant"] strong {
+  color: var(--color-action-primary);
+}
+.live-captions .live-caption p {
+  margin: 4px 0 0;
+  font-size: 16px;
+  white-space: pre-wrap;
+}
+.live-captions .live-captions-empty {
+  margin: 20px 0;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+.candidate.with-captions {
+  min-height: 0;
+}
+.candidate.with-captions .orb-wrap {
+  padding: 8px 0;
+}
+.candidate.with-captions .orb {
+  width: 96px;
+  height: 96px;
+}
+.with-captions .orb .bars {
+  transform: scale(0.6);
+}
+.with-captions .voice-status {
+  margin: 4px 0 12px;
+}
+.with-captions .voice-controls {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  width: 100%;
+  margin: 8px 0;
+  padding: 8px 0;
+  background: var(--color-bg-canvas);
+}
+.preview .with-captions .voice-controls {
+  background: var(--color-bg-surface);
+}
+.with-captions .candidate-footer {
+  padding-top: 12px;
 }
 .candidate-footer {
   margin-top: auto;
@@ -585,6 +668,18 @@ textarea {
   width: auto;
   min-width: 140px;
 }
+.records-filters > :first-child {
+  flex: 1 1 200px;
+}
+.records-filters input[type="date"] {
+  width: 170px;
+}
+.records-filters select {
+  max-width: 240px;
+}
+.record-status .tag {
+  margin: 2px 6px 2px 0;
+}
 .table-wrap {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
@@ -645,19 +740,39 @@ textarea {
 .editor-form textarea.prompt {
   min-height: 300px;
 }
+.dialog.prompt-assistant-dialog {
+  max-width: 800px;
+  overflow: hidden;
+}
+.prompt-assistant-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.prompt-assistant-dialog > h2 {
+  flex-shrink: 0;
+  padding-right: 44px;
+}
+.prompt-assistant-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+}
 .prompt-assistant {
-  border-block: 1px solid var(--color-border);
-  padding-block: var(--space-5);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  margin: -4px;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
 }
-.prompt-assistant[hidden] {
-  display: none;
+.prompt-assistant > * {
+  flex-shrink: 0;
 }
-.prompt-assistant h3,
 .prompt-assistant h4,
-.prompt-assistant p {
+.prompt-assistant-dialog .prompt-assistant p {
   margin: 0;
 }
 .prompt-assistant-fields {
@@ -1201,6 +1316,20 @@ textarea {
     flex: 1;
     min-width: 110px;
   }
+  .records-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .records-filters > :first-child {
+    grid-column: 1 / -1;
+  }
+  .records-filters input,
+  .records-filters input[type="date"],
+  .records-filters select {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
   .table-wrap {
     border: 0;
     background: transparent;
@@ -1290,9 +1419,6 @@ textarea {
   }
   .test-input {
     margin-top: 16px;
-  }
-  .subtitle {
-    font-size: 16px;
   }
   .row.session-header {
     font-size: 13px;

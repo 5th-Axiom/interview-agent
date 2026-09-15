@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { UserCaptionUpdate } from "../shared/contracts";
 import {
   SpeechConnection,
   speechConfig,
@@ -21,6 +22,8 @@ type Part = {
   final: boolean;
   chunks: string[];
   provider: string;
+  captionId: string;
+  captionRevision: number;
 };
 type Group = {
   id: string;
@@ -80,6 +83,7 @@ export class LiveASR {
       elapsed?: number,
       detail?: Record<string, unknown>,
     ) => void = () => {},
+    private onCaption: (update: UserCaptionUpdate) => void = () => {},
   ) {
     this.config = endpoint
       ? { ...config, endpoint, provider: "deepgram" }
@@ -133,11 +137,21 @@ export class LiveASR {
         this.onTiming(r.final ? "asr_final" : "asr_interim", undefined, {
           request_id: next.id,
         });
-        this.parts.set(key, {
+        const part = {
           text: r.text,
           final: r.final,
           chunks,
           provider: next.id,
+          captionId: previous?.captionId ?? randomUUID(),
+          captionRevision: (previous?.captionRevision ?? -1) + 1,
+        };
+        this.parts.set(key, part);
+        // Display updates do not wait for silence or enter the persistence lane.
+        this.onCaption({
+          utterance_id: part.captionId,
+          text: r.text.slice(0, 10000),
+          revision: part.captionRevision,
+          final: r.final,
         });
         this.pending.add(key);
         this.schedule(this.committed.has(key) ? 0 : undefined);

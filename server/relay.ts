@@ -68,6 +68,7 @@ wss.on("connection", (ws, req) => {
     initializing = false,
     going = false,
     recovering = false;
+  let captionsEnabled = false;
   let asr: LiveASR | null = null,
     muted = false,
     lastFrame = -1,
@@ -515,6 +516,14 @@ wss.on("connection", (ws, req) => {
       return true;
     });
     send({ type: "saved", event_ids: [eid] });
+    if (captionsEnabled && !info)
+      send({
+        type: "user_caption",
+        utterance_id: eid,
+        text: text.slice(0, 10000),
+        revision: 0,
+        final: true,
+      });
     if (result) {
       cancel("new_input");
       timing("utterance_committed", undefined, {
@@ -553,7 +562,7 @@ wss.on("connection", (ws, req) => {
     });
     if (!sessionTest) {
       asr?.close();
-      asr = new LiveASR(
+      const liveAsr = new LiveASR(
         (eid, text, revisionOf, info) =>
           inputLane.run(1, () => commitText(eid, text, revisionOf, info)),
         () => {
@@ -567,7 +576,12 @@ wss.on("connection", (ws, req) => {
           silenceMs: runtime.asrSilenceMs ?? 900,
         },
         (stage, elapsed, detail) => timing(stage, elapsed, detail),
+        (update) => {
+          if (captionsEnabled && asr === liveAsr && !closed && !recovering)
+            send({ type: "user_caption", ...update });
+        },
       );
+      asr = liveAsr;
       await asr.open();
     }
     if (closed) return;
@@ -639,6 +653,7 @@ wss.on("connection", (ws, req) => {
     version = row.version;
     sessionTest = row.test_mode;
     runtime = row.runtime_config;
+    captionsEnabled = e.captions;
     if (closed || ws.readyState !== WebSocket.OPEN) {
       await cleanup();
       return;

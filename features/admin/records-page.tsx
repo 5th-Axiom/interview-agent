@@ -7,17 +7,29 @@ import { useAdminQuery } from "./use-admin";
 import { Role } from "@/shared/contracts";
 import { useRecordFilters } from "./use-record-filters";
 export function RecordsPage() {
-  const { phone, search, role, status, date, page, ready, update, clear } =
-    useRecordFilters();
+  const {
+    phone,
+    search,
+    role,
+    status,
+    retry,
+    date,
+    page,
+    ready,
+    update,
+    clear,
+  } = useRecordFilters();
   const roles = useAdminQuery("roles", "roles");
   const qs = new URLSearchParams({
     phone: search,
     role,
     status,
+    retry,
     date,
     page: String(page),
   });
   const q = useAdminQuery("records", `records?${qs}`, 5000);
+  const filtered = Boolean(search || role || status || retry || date);
   return (
     <Shell admin>
       <header className="page-heading">
@@ -27,7 +39,7 @@ export function RecordsPage() {
         </div>
       </header>
       <form
-        className="toolbar"
+        className="toolbar records-filters"
         onSubmit={(e) => {
           e.preventDefault();
           update({ search: phone });
@@ -64,6 +76,15 @@ export function RecordsPage() {
           <option value="timeout">超时结束</option>
           <option value="recovery">异常中断 / 待恢复</option>
           <option value="paused">已暂停</option>
+        </select>
+        <select
+          aria-label="再次面试"
+          value={retry}
+          onChange={(e) => update({ retry: e.target.value })}
+        >
+          <option value="">全部重面情况</option>
+          <option value="pending">重面待审核</option>
+          <option value="available">可再次面试</option>
         </select>
         <input
           className="input"
@@ -106,9 +127,12 @@ export function RecordsPage() {
                       hour12: false,
                     })}
                   </td>
-                  <td>
+                  <td className="record-status">
                     <Tag status={s.end_reason ?? s.status} />
                     {s.pending && <span className="tag warn">重面待审核</span>}
+                    {s.retry_available && (
+                      <span className="tag live">可再次面试</span>
+                    )}
                   </td>
                   <td>
                     <Link
@@ -142,22 +166,14 @@ export function RecordsPage() {
       ) : (
         <div className="empty">
           <ClipboardList />
-          <h2>
-            {search || role || status || date
-              ? "没有找到匹配的面试记录"
-              : "这里还没有面试记录"}
-          </h2>
+          <h2>{filtered ? "没有找到匹配的面试记录" : "这里还没有面试记录"}</h2>
           <p>
-            {search || role || status || date
+            {filtered
               ? "调整查找条件，或清空筛选后查看全部记录。"
               : "候选人开始正式面试后，记录会出现在这里。"}
           </p>
-          <Button
-            onClick={
-              search || role || status || date ? clear : () => void q.refetch()
-            }
-          >
-            {search || role || status || date ? "清空筛选" : "刷新记录"}
+          <Button onClick={filtered ? clear : () => void q.refetch()}>
+            {filtered ? "清空筛选" : "刷新记录"}
           </Button>
         </div>
       )}

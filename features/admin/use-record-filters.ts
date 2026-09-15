@@ -6,6 +6,7 @@ const initial = {
   search: "",
   role: "",
   status: "",
+  retry: "",
   date: "",
   page: 1,
 };
@@ -25,7 +26,12 @@ export function useRecordFilters() {
         Number.isSafeInteger(value.page) &&
         value.page > 0
       )
-        restored = value;
+        restored = {
+          ...value,
+          retry: ["pending", "available"].includes(value.retry)
+            ? value.retry
+            : "",
+        };
     } catch {
       /* Storage can be unavailable in private browser contexts. */
     }
@@ -47,7 +53,9 @@ export function useRecordFilters() {
     setFilters((old) => ({
       ...old,
       ...value,
-      ...(["search", "role", "status", "date"].some((key) => key in value)
+      ...(["search", "role", "status", "retry", "date"].some(
+        (key) => key in value,
+      )
         ? { page: 1 }
         : {}),
     }));

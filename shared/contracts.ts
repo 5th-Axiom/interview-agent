@@ -39,6 +39,7 @@ export const clientEvent = z.discriminatedUnion("type", [
     ticket: z.string().max(2048),
     takeover: z.boolean().default(false),
     protocol: z.number().int().min(1).max(2).default(1),
+    captions: z.boolean().default(false),
   }),
   z.object({ type: z.literal("heartbeat"), epoch: z.number().int() }),
   z.object({
@@ -170,7 +171,20 @@ export type PreviewHistory = {
 };
 
 const envelope = { epoch: z.number().int().nonnegative() };
+const userCaptionEvent = z.object({
+  ...envelope,
+  type: z.literal("user_caption"),
+  utterance_id: id,
+  text: z.string().max(10000),
+  revision: z.number().int().nonnegative(),
+  final: z.boolean(),
+});
+export type UserCaptionUpdate = Omit<
+  z.infer<typeof userCaptionEvent>,
+  "type" | "epoch"
+>;
 export const serverEvent = z.discriminatedUnion("type", [
+  userCaptionEvent,
   z.object({
     ...envelope,
     type: z.literal("ready"),

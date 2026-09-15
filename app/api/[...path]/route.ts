@@ -206,6 +206,9 @@ async function handler(req: NextRequest) {
         role = req.nextUrl.searchParams.get("role"),
         state = req.nextUrl.searchParams.get("status"),
         date = req.nextUrl.searchParams.get("date");
+      const retry = z
+        .enum(["", "pending", "available"])
+        .parse(req.nextUrl.searchParams.get("retry") ?? "");
       const page = z.coerce
         .number()
         .int()
@@ -218,7 +221,27 @@ async function handler(req: NextRequest) {
           "日期格式无效",
         );
       const result = await pool.query(
-        "SELECT s.*,u.phone_mask,v.name,EXISTS(SELECT 1 FROM retry_requests rr WHERE rr.session_id=s.id AND rr.status='pending') AS pending FROM sessions s JOIN users u ON u.id=s.user_id JOIN entries e ON e.id=s.entry_id LEFT JOIN role_segments rs ON rs.id=s.current_segment LEFT JOIN role_versions v ON v.id=rs.role_version_id WHERE e.org_id=$1 AND s.mode='formal' AND ($2::text IS NULL OR u.phone_hash=$2) AND ($3::text IS NULL OR EXISTS(SELECT 1 FROM role_segments history JOIN role_versions hv ON hv.id=history.role_version_id WHERE history.session_id=s.id AND hv.role_id::text=$3)) AND ($4::text IS NULL OR s.status=$4 OR s.end_reason=$4) AND ($5::date IS NULL OR (s.started_at AT TIME ZONE 'Asia/Shanghai')::date=$5::date) ORDER BY s.created_at DESC,s.id DESC LIMIT 51 OFFSET $6",
+        `SELECT s.*,u.phone_mask,v.name,retry.pending,retry.retry_available
+         FROM sessions s
+         JOIN users u ON u.id=s.user_id
+         JOIN entries e ON e.id=s.entry_id
+         LEFT JOIN role_segments rs ON rs.id=s.current_segment
+         LEFT JOIN role_versions v ON v.id=rs.role_version_id
+         CROSS JOIN LATERAL (
+           SELECT
+             EXISTS(SELECT 1 FROM retry_requests rr WHERE rr.session_id=s.id AND rr.status='pending') AS pending,
+             s.status='ended' AND e.open
+             AND EXISTS(SELECT 1 FROM retry_requests rr WHERE rr.session_id=s.id AND rr.status='approved' AND rr.used_by IS NULL)
+             AND NOT EXISTS(SELECT 1 FROM sessions newer WHERE newer.user_id=s.user_id AND newer.entry_id=s.entry_id AND newer.mode='formal' AND newer.created_at>s.created_at)
+             AS retry_available
+         ) retry
+         WHERE e.org_id=$1 AND s.mode='formal'
+         AND ($2::text IS NULL OR u.phone_hash=$2)
+         AND ($3::text IS NULL OR EXISTS(SELECT 1 FROM role_segments history JOIN role_versions hv ON hv.id=history.role_version_id WHERE history.session_id=s.id AND hv.role_id::text=$3))
+         AND ($4::text IS NULL OR s.status=$4 OR s.end_reason=$4)
+         AND ($5::date IS NULL OR (s.started_at AT TIME ZONE 'Asia/Shanghai')::date=$5::date)
+         AND ($7::text IS NULL OR ($7='pending' AND retry.pending) OR ($7='available' AND retry.retry_available))
+         ORDER BY s.created_at DESC,s.id DESC LIMIT 51 OFFSET $6`,
         [
           org,
           phone ? phoneHash(phone) : null,
@@ -226,6 +249,7 @@ async function handler(req: NextRequest) {
           state || null,
           date || null,
           (page - 1) * 50,
+          retry || null,
         ],
       );
       return NextResponse.json({
