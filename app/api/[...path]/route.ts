@@ -32,6 +32,9 @@ import {
   append,
 } from "@/server/business";
 import { saveAudioTail } from "@/server/audio-tail";
+import { previewHistory } from "@/server/preview-history";
+import { assistPrompt } from "@/server/prompt-assistant";
+import { promptAssistantSchema } from "@/shared/prompt-assistant";
 import { getObject, headObject, putObject, wav } from "@/server/storage";
 import { transcribeWav } from "@/server/asr";
 import { streamModel, synthesize } from "@/server/model";
@@ -173,6 +176,14 @@ async function handler(req: NextRequest) {
       req.headers.get("cookie"),
       req.headers.get("x-interview-client") ?? "candidate",
     );
+    if (path.join("/") === "admin/prompt-assistant" && !read) {
+      admin(actor);
+      const input = promptAssistantSchema.parse(body);
+      await rateLimit("prompt-assistant", actor.org_id!, 12);
+      return NextResponse.json(await assistPrompt(input, req.signal), {
+        headers: { "Cache-Control": "private, no-store" },
+      });
+    }
     if (path[0] === "me") return NextResponse.json(actor);
     if (path[0] === "bootstrap")
       return NextResponse.json(
@@ -223,6 +234,10 @@ async function handler(req: NextRequest) {
         hasMore: result.rows.length > 50,
       });
     }
+    if (path[0] === "sessions" && path[2] === "preview-history" && read)
+      return NextResponse.json(await previewHistory(actor, id.parse(path[1])), {
+        headers: { "Cache-Control": "private, no-store" },
+      });
     if (path[0] === "sessions" && path[1] && read)
       return NextResponse.json(await snapshot(actor, id.parse(path[1])));
     if (

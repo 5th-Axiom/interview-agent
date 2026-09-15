@@ -1,18 +1,26 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Mic, Eye, Copy, Check } from "lucide-react";
+import { ArrowLeft, Mic, BookOpen, Check, PenLine } from "lucide-react";
 import { Shell } from "@/components/business/shell";
 import { VoiceOrb } from "@/components/business/voice-orb";
-import { VoicePanel } from "@/components/business/voice-panel";
+import { RolePreview } from "./role-preview";
 import { Button, Field, Notice, Tag, Dialog } from "@/components/base/ui";
 import { useAdminQuery } from "./use-admin";
-import { api, mutate } from "./api";
+import { mutate } from "./api";
 import { Role, Session } from "@/shared/contracts";
 import { useUnsavedChanges } from "./use-unsaved-changes";
-const example =
-  "你是一位专业、友好的面试官。先邀请候选人简单介绍自己，再围绕其真实项目经历自然追问。每次只问一个问题，了解背景、个人贡献、关键取舍与结果。避免重复已讨论的话题，允许候选人要求解释。了解关键经历后，邀请候选人提问，最后礼貌地自然收尾。";
-export function RoleEditor({ id }: { id: string }) {
+import { rememberCreatedRoleDraft, takeCreatedRoleDraft } from "./role-draft";
+import { TemplatePicker } from "./template-picker";
+import { PromptAssistant } from "./prompt-assistant";
+import { findPromptTemplate, templateRoleDraft } from "./prompt-templates";
+export function RoleEditor({
+  id,
+  templateId,
+}: {
+  id: string;
+  templateId?: string;
+}) {
   const router = useRouter(),
     q = useAdminQuery("roles", "roles");
   const [name, setName] = useState(""),
@@ -23,22 +31,32 @@ export function RoleEditor({ id }: { id: string }) {
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
-    [showExample, setShowExample] = useState(false),
-    [replace, setReplace] = useState(false),
+    [showTemplates, setShowTemplates] = useState(false),
+    [showPromptAssistant, setShowPromptAssistant] = useState(false),
     [leave, setLeave] = useState(false),
-    [preview, setPreview] = useState<Session | null>(null),
-    [testMode, setTestMode] = useState(false);
+    [previewOpen, setPreviewOpen] = useState(false),
+    [previewFinished, setPreviewFinished] = useState(false),
+    [preview, setPreview] = useState<Session | null>(null);
+  const initializedRole = useRef<string | null>(null);
   const role = q.data?.find((r: Role) => r.id === id);
   const current = JSON.stringify({ name, description, prompt });
+  const currentRef = useRef(current);
+  currentRef.current = current;
   const dirty = current !== saved;
   const navigation = useUnsavedChanges(!!saved && dirty);
   useEffect(() => {
-    void api("config")
-      .then((c) => setTestMode(c.testMode))
-      .catch(() => setError("配置读取失败，请刷新重试。"));
-  }, []);
-  useEffect(() => {
     if (role) {
+      if (initializedRole.current === role.id) return;
+      initializedRole.current = role.id;
+      const transferred = takeCreatedRoleDraft(role.id);
+      if (transferred) {
+        setRevision(transferred.revision);
+        setName(transferred.draft.name);
+        setDescription(transferred.draft.description);
+        setPrompt(transferred.draft.prompt);
+        setSaved(transferred.saved);
+        return;
+      }
       setRevision(role.revision);
       setName(role.name);
       setDescription(role.description);
@@ -50,9 +68,23 @@ export function RoleEditor({ id }: { id: string }) {
           prompt: role.prompt,
         }),
       );
-    } else if (id === "new")
+    } else if (id === "new") {
+      if (initializedRole.current === "new") return;
+      initializedRole.current = "new";
+      const template = findPromptTemplate(templateId);
+      const draft = template
+        ? templateRoleDraft(template)
+        : { name: "", description: "", prompt: "" };
+      setName(draft.name);
+      setDescription(draft.description);
+      setPrompt(draft.prompt);
+      if (template)
+        setMessage("已填入「" + template.name + "」，可修改后直接试聊。");
+      else if (templateId) setError("没有找到该模板，请重新选择模板。");
+      setRevision(0);
       setSaved(JSON.stringify({ name: "", description: "", prompt: "" }));
-  }, [role?.id]);
+    }
+  }, [id, role?.id, templateId]);
   async function save(publish = false, exit = false) {
     setBusy(true);
     setError("");
@@ -67,8 +99,19 @@ export function RoleEditor({ id }: { id: string }) {
       setSaved(current);
       setMessage(publish ? "已发布，新面试将使用本次版本。" : "草稿已保存。");
       await q.refetch();
-      if (exit) router.push("/admin/roles");
-      else if (id === "new") router.replace(`/admin/roles/${result.id}`);
+      if (exit && currentRef.current === current) router.push("/admin/roles");
+      else if (id === "new") {
+        rememberCreatedRoleDraft(result.id, {
+          draft: JSON.parse(currentRef.current),
+          saved: current,
+          revision: result.revision,
+        });
+        router.replace(`/admin/roles/${result.id}`);
+      }
+      if (exit && currentRef.current !== current) {
+        setLeave(false);
+        setMessage("本次提交已保存，保存期间新增的修改仍保留在编辑框中。");
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -86,6 +129,8 @@ export function RoleEditor({ id }: { id: string }) {
         ...(id !== "new" ? { role_id: id } : {}),
       });
       setPreview({ ...s, name });
+      setPreviewFinished(false);
+      setPreviewOpen(true);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -159,21 +204,41 @@ export function RoleEditor({ id }: { id: string }) {
           <div className="row between">
             <h3>面试说明 Prompt *</h3>
             <div className="row">
-              <Button variant="quiet" onClick={() => setShowExample(true)}>
-                <Eye />
-                查看示例
+              <Button
+                variant="quiet"
+                disabled={busy}
+                aria-expanded={showPromptAssistant}
+                aria-controls="prompt-assistant"
+                onClick={() => setShowPromptAssistant(!showPromptAssistant)}
+              >
+                <PenLine />
+                帮我写面试说明
               </Button>
               <Button
                 variant="quiet"
-                onClick={() =>
-                  prompt.trim() ? setReplace(true) : setPrompt(example)
-                }
+                disabled={busy}
+                onClick={() => setShowTemplates(true)}
               >
-                <Copy />
-                使用示例
+                <BookOpen />
+                选择模板
               </Button>
             </div>
           </div>
+          <PromptAssistant
+            key={id}
+            name={name}
+            description={description}
+            open={showPromptAssistant}
+            disabled={busy}
+            hasPrompt={!!prompt.trim()}
+            onClose={() => setShowPromptAssistant(false)}
+            onApply={(draft) => {
+              setPrompt(draft);
+              setShowPromptAssistant(false);
+              setError("");
+              setMessage("已填入生成的面试说明，可继续修改后试聊。");
+            }}
+          />
           <textarea
             className="prompt"
             aria-label="面试说明 Prompt"
@@ -203,6 +268,11 @@ export function RoleEditor({ id }: { id: string }) {
           <p className="small">
             试聊不会占用候选人资格，也不会出现在正式面试记录中。
           </p>
+          {previewFinished && (
+            <Button variant="quiet" onClick={() => setPreviewOpen(true)}>
+              查看上次试聊记录
+            </Button>
+          )}
         </aside>
       </div>
       <footer className="sticky-actions">
@@ -226,33 +296,21 @@ export function RoleEditor({ id }: { id: string }) {
           </Button>
         </div>
       </footer>
-      <Dialog
-        open={showExample}
-        onClose={() => setShowExample(false)}
-        title="面试说明示例"
-      >
-        <p>{example}</p>
-        <Button onClick={() => setShowExample(false)}>关闭</Button>
-      </Dialog>
-      <Dialog
-        open={replace}
-        onClose={() => setReplace(false)}
-        title="替换当前面试说明？"
-      >
-        <p>使用示例会替换编辑框中的现有内容。</p>
-        <div className="actions">
-          <Button onClick={() => setReplace(false)}>取消</Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              setPrompt(example);
-              setReplace(false);
-            }}
-          >
-            替换内容
-          </Button>
-        </div>
-      </Dialog>
+      {showTemplates && (
+        <TemplatePicker
+          hasPrompt={!!prompt.trim()}
+          onClose={() => setShowTemplates(false)}
+          onApply={(template) => {
+            const draft = templateRoleDraft(template);
+            setPrompt(draft.prompt);
+            if (!name.trim()) setName(draft.name);
+            if (!description.trim()) setDescription(draft.description);
+            setMessage("已填入「" + template.name + "」，可修改后直接试聊。");
+            setError("");
+            setShowTemplates(false);
+          }}
+        />
+      )}
       <Dialog
         open={leave}
         onClose={() => setLeave(false)}
@@ -270,31 +328,15 @@ export function RoleEditor({ id }: { id: string }) {
           </Button>
         </div>
       </Dialog>
-      <Dialog
-        className="preview"
-        open={!!preview}
-        onClose={() => {
-          if (preview)
-            void mutate(`sessions/${preview.id}/control`, {
-              action: "end",
-            }).catch(() =>
-              setError("试聊语音已停止，结束状态暂未保存，请稍后重试。"),
-            );
-          setPreview(null);
-        }}
-        title="岗位试聊"
-      >
-        {preview && (
-          <VoicePanel
-            session={preview}
-            testMode={testMode}
-            preview
-            autoStart
-            onEnded={() => setPreview(null)}
-            onRefresh={() => {}}
-          />
-        )}
-      </Dialog>
+      {preview && (
+        <RolePreview
+          key={preview.id}
+          session={preview}
+          open={previewOpen}
+          onFinished={() => setPreviewFinished(true)}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
     </Shell>
   );
 }

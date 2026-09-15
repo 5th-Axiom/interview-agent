@@ -8,6 +8,7 @@ import {
   Sun,
   BriefcaseBusiness,
   ClipboardList,
+  BookOpen,
   ArrowUpRight,
 } from "lucide-react";
 import {
@@ -121,13 +122,23 @@ export function Shell({
             <Link
               className={path.includes("/roles") ? "active" : ""}
               href="/admin/roles"
+              aria-current={path.includes("/roles") ? "page" : undefined}
             >
               <BriefcaseBusiness />
               岗位管理
             </Link>
             <Link
+              className={path.includes("/templates") ? "active" : ""}
+              href="/admin/templates"
+              aria-current={path.includes("/templates") ? "page" : undefined}
+            >
+              <BookOpen />
+              Prompt 模板
+            </Link>
+            <Link
               className={path.includes("/interviews") ? "active" : ""}
               href="/admin/interviews"
+              aria-current={path.includes("/interviews") ? "page" : undefined}
             >
               <ClipboardList />
               面试记录

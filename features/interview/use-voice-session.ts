@@ -29,6 +29,7 @@ export function useVoiceSession(
     scene = useRef(0),
     session = useRef(initialSession),
     done = useRef(false),
+    finishing = useRef<Promise<void> | null>(null),
     controlLock = useRef(false),
     disconnecting = useRef(false),
     lastVad = useRef(0),
@@ -54,7 +55,11 @@ export function useVoiceSession(
   endedRef.current = onEnded;
   refreshRef.current = onRefresh;
   useEffect(() => {
-    if (!active.current || initialSession.epoch === epoch.current)
+    if (
+      initialSession.id === session.current.id &&
+      initialSession.version >= session.current.version &&
+      (!active.current || initialSession.epoch === epoch.current)
+    )
       session.current = initialSession;
   }, [initialSession]);
   const backlog = () =>
@@ -206,24 +211,41 @@ export function useVoiceSession(
     pending.current.inputs.set(packet.event_id, packet);
     send(packet);
   }
-  async function finish() {
+  function finish(): Promise<void> {
+    if (finishing.current) return finishing.current;
+    if (done.current) return Promise.resolve();
     done.current = true;
-    active.current = false;
-    stopPlayback();
-    stopCapture();
-    try {
-      await syncPending(true);
-    } catch {
-      setError("部分片段尚未确认保存，请保留此页面并重试。");
-      setState("recovery");
-      done.current = false;
-      return;
-    }
     disconnect();
-    setState("ended");
-    endedRef.current();
+    const generation = scene.current;
+    setControlling(true);
+    const task = (async () => {
+      try {
+        await syncPending(true);
+        if (generation !== scene.current) return;
+        setState("ended");
+        endedRef.current();
+      } catch {
+        if (generation !== scene.current) return;
+        setError("部分片段尚未确认保存，请保留此页面并重试。");
+        setState("recovery");
+        done.current = false;
+      } finally {
+        if (generation === scene.current) setControlling(false);
+      }
+    })();
+    finishing.current = task;
+    void task.finally(() => {
+      if (finishing.current === task) finishing.current = null;
+    });
+    return task;
   }
+  useEffect(() => {
+    // HTTP snapshots also detect completion when the final relay event is lost.
+    if (initialSession.status === "ended" && !controlLock.current)
+      void finish();
+  }, [initialSession.status]);
   async function connect(s: Session, isTest: boolean, takeover = false) {
+    if (controlLock.current || finishing.current || done.current) return;
     disconnect();
     const generation = scene.current;
     session.current = s;
@@ -321,10 +343,15 @@ export function useVoiceSession(
           `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:3101`,
       );
       ws.current = socket;
-      socket.onopen = () =>
+      socket.onopen = () => {
+        if (generation !== scene.current || controlLock.current) {
+          socket.close();
+          return;
+        }
         socket.send(
           JSON.stringify({ type: "init", ticket, takeover, protocol: 2 }),
         );
+      };
       socket.onclose = () => {
         if (
           generation === scene.current &&
@@ -333,7 +360,10 @@ export function useVoiceSession(
         )
           lost("连接已断开或被其他页面接管，请点击继续。");
       };
-      socket.onerror = () => setError("暂时无法连接语音服务，请重试。");
+      socket.onerror = () => {
+        if (generation === scene.current)
+          setError("暂时无法连接语音服务，请重试。");
+      };
       socket.onmessage = (event) => {
         if (generation !== scene.current) return;
         const parsed = serverEvent.safeParse(JSON.parse(event.data));
@@ -359,7 +389,9 @@ export function useVoiceSession(
             .then(() => {
               if (generation === scene.current) send({ type: "go" });
             })
-            .catch((e) => lost(e.message));
+            .catch((e) => {
+              if (generation === scene.current) lost(e.message);
+            });
           retry.current = setInterval(() => {
             if (!active.current) return;
             for (const item of pending.current.text.batch())
@@ -400,9 +432,9 @@ export function useVoiceSession(
           inputState(mutedRef.current);
           lastFrameAt.current = 0;
           telemetry("capture_start");
-          void mic.current
-            ?.mute(mutedRef.current)
-            .catch((e) => lost(e.message));
+          void mic.current?.mute(mutedRef.current).catch((e) => {
+            if (generation === scene.current) lost(e.message);
+          });
           refreshRef.current();
           return;
         }
@@ -560,7 +592,7 @@ export function useVoiceSession(
     }
   }
   async function control(action: string, role_id?: string) {
-    if (controlLock.current) return;
+    if (controlLock.current || finishing.current) return;
     controlLock.current = true;
     setControlling(true);
     interrupt();
@@ -568,6 +600,8 @@ export function useVoiceSession(
       await mic.current?.mute(true);
       active.current = false;
       stopCapture();
+      // A microphone/ticket request still resolving cannot restart this session.
+      scene.current++;
       const s = session.current;
       const next = await mutate<Session>(`sessions/${s.id}/control`, {
         action,

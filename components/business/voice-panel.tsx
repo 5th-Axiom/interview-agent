@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useImperativeHandle, useState, type Ref } from "react";
 import {
   Mic,
   MicOff,
@@ -14,7 +14,11 @@ import { Button, Notice, Dialog } from "@/components/base/ui";
 import { VoiceOrb } from "./voice-orb";
 import { useVoiceSession } from "@/features/interview/use-voice-session";
 import { Session } from "@/shared/contracts";
+export type VoicePanelHandle = {
+  end: () => Promise<Session | undefined>;
+};
 export function VoicePanel({
+  ref,
   session,
   testMode,
   onEnded,
@@ -23,6 +27,7 @@ export function VoicePanel({
   autoStart = false,
   preview = false,
 }: {
+  ref?: Ref<VoicePanelHandle>;
   session: Session;
   testMode: boolean;
   onEnded: () => void;
@@ -32,6 +37,7 @@ export function VoicePanel({
   preview?: boolean;
 }) {
   const voice = useVoiceSession(session, onEnded, onRefresh);
+  useImperativeHandle(ref, () => ({ end: () => voice.control("end") }));
   const [captions, setCaptions] = useState(false),
     [text, setText] = useState(""),
     [time, setTime] = useState(Date.now());
@@ -128,19 +134,23 @@ export function VoicePanel({
           <p>
             {voice.state === "paused"
               ? "暂停期间仍按原截止时间结束。"
-              : "你有一场未完成的面试，之前的交流已保留。"}
+              : preview
+                ? "准备好麦克风后即可开始试聊；连接中断时可重试。"
+                : "你有一场未完成的面试，之前的交流已保留。"}
           </p>
           <div className="row" style={{ justifyContent: "center" }}>
             <Button
               variant="primary"
+              disabled={voice.controlling}
               onClick={() => void voice.connect(session, testMode)}
             >
               <Play />
-              继续面试
+              {preview ? "开始 / 继续试聊" : "继续面试"}
             </Button>
             {voice.error.includes("接管") ||
             voice.error.includes("已有页面") ? (
               <Button
+                disabled={voice.controlling}
                 onClick={() => void voice.connect(session, testMode, true)}
               >
                 接管此会话
@@ -180,7 +190,7 @@ export function VoicePanel({
         <div className="voice-control">
           <Button
             variant="danger"
-            aria-label="结束面试"
+            aria-label={preview ? "结束试聊" : "结束面试"}
             disabled={voice.controlling}
             onClick={() => voice.setEndConfirm(true)}
           >
@@ -233,7 +243,7 @@ export function VoicePanel({
       >
         <p>
           {preview
-            ? "结束后返回岗位配置，可继续修改面试说明。"
+            ? "结束后立即查看本次对话记录，再返回修改面试说明。"
             : "结束后会保存本次记录。你可以反馈体验，也可以申请再次面试。"}
         </p>
         <div className="actions">

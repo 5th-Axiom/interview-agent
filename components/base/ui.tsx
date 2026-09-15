@@ -1,5 +1,11 @@
 "use client";
-import { ButtonHTMLAttributes, ReactNode, useEffect, useRef } from "react";
+import {
+  ButtonHTMLAttributes,
+  ReactNode,
+  useEffect,
+  useId,
+  useRef,
+} from "react";
 export function Button({
   variant = "",
   className = "",
@@ -65,6 +71,7 @@ export function Dialog({
   className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
     if (open && !ref.current?.open) ref.current?.showModal();
     else if (!open && ref.current?.open) ref.current.close();
@@ -73,10 +80,17 @@ export function Dialog({
     <dialog
       ref={ref}
       className={`dialog ${className}`}
-      onCancel={onClose}
-      onClose={onClose}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        // The owner may need to save or end a voice session before closing.
+        event.preventDefault();
+        onClose();
+      }}
+      onClose={() => {
+        if (open) onClose();
+      }}
     >
-      <h2>{title}</h2>
+      <h2 id={titleId}>{title}</h2>
       {children}
     </dialog>
   );

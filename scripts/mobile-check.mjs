@@ -105,8 +105,14 @@ await page.getByRole("button", { name: "开始试聊" }).click();
 await page.getByLabel("测试回答").waitFor({ timeout: 15000 });
 await page.getByLabel("测试回答").fill("这是一条试聊回答");
 await page.getByRole("button", { name: "发送", exact: true }).click();
-await page.getByRole("button", { name: "结束面试", exact: true }).click();
+await page.getByRole("button", { name: "结束试聊", exact: true }).click();
 await page.getByRole("button", { name: "确认结束", exact: true }).click();
+await page.getByRole("dialog", { name: "试聊记录", exact: true }).waitFor();
+await page
+  .getByRole("region", { name: "本次试聊对话记录" })
+  .getByText("这是一条试聊回答", { exact: true })
+  .waitFor();
+await page.getByRole("button", { name: "返回编辑", exact: true }).click();
 await page.getByRole("heading", { name: "配置面试岗位" }).waitFor();
 await page.screenshot({
   path: ".local/screenshots/editor-h5.png",

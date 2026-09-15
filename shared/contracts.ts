@@ -156,6 +156,18 @@ export type InterviewEvent = {
   response_id: string | null;
   metadata: Record<string, unknown>;
 };
+export type PreviewHistory = {
+  session: Session;
+  turns: {
+    event_id: string;
+    speaker: "user" | "assistant";
+    text: string;
+    created_at: string;
+    recovered: boolean;
+    playback?: "heard" | "partial" | "unheard";
+  }[];
+  transcription_status: "pending" | "running" | "done" | "failed" | null;
+};
 
 const envelope = { epoch: z.number().int().nonnegative() };
 export const serverEvent = z.discriminatedUnion("type", [

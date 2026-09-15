@@ -82,6 +82,18 @@ export async function capture(
   } catch (e) {
     stream?.getTracks().forEach((t) => t.stop());
     void context.close();
+    if (e instanceof DOMException) {
+      if (["NotAllowedError", "SecurityError"].includes(e.name))
+        throw new Error(
+          "无法使用麦克风，请在浏览器和系统设置中允许麦克风权限，然后重试。",
+        );
+      if (["NotFoundError", "DevicesNotFoundError"].includes(e.name))
+        throw new Error("没有找到麦克风，请连接输入设备后重试。");
+      if (["NotReadableError", "TrackStartError"].includes(e.name))
+        throw new Error(
+          "麦克风无法开启，可能被其他应用占用，请检查设备后重试。",
+        );
+    }
     throw e;
   }
 }

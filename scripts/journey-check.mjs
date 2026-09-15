@@ -93,7 +93,8 @@ try {
   await admin
     .getByLabel("岗位简介（选填）")
     .fill("浏览器验收专用，验证草稿与发布隔离。");
-  await admin.getByRole("button", { name: "使用示例", exact: true }).click();
+  await admin.getByRole("button", { name: "选择模板", exact: true }).click();
+  await admin.getByRole("button", { name: "使用此模板", exact: true }).click();
   await admin.getByRole("button", { name: "保存草稿", exact: true }).click();
   await admin.waitForURL(/\/admin\/roles\/[0-9a-f-]+$/);
   rid = new URL(admin.url()).pathname.split("/").at(-1);
@@ -108,13 +109,17 @@ try {
     .getByRole("button", { name: "静音", exact: true })
     .click();
   await screenshot(admin, "preview-pc");
-  await admin.getByRole("button", { name: "结束面试", exact: true }).click();
+  await admin.getByRole("button", { name: "结束试聊", exact: true }).click();
   await admin.getByRole("button", { name: "确认结束", exact: true }).click();
-  await expect(admin.getByRole("dialog"))
-    .toHaveCount(0)
-    .catch(async () => {
-      await expect(admin.locator("dialog[open]")).toHaveCount(0);
-    });
+  await expect(
+    admin.getByRole("dialog", { name: "试聊记录", exact: true }),
+  ).toBeVisible();
+  await expect(
+    admin.getByRole("region", { name: "本次试聊对话记录" }),
+  ).toBeVisible();
+  await screenshot(admin, "preview-history-pc");
+  await admin.getByRole("button", { name: "返回编辑", exact: true }).click();
+  await expect(admin.locator("dialog[open]")).toHaveCount(0);
   await admin.getByRole("button", { name: "发布岗位", exact: true }).click();
   await admin
     .getByText("已发布，新面试将使用本次版本。", { exact: true })
